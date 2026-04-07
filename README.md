@@ -4,6 +4,10 @@
 
 ---
 
+![GIT AST SEARCH](./assets/GIT_AST_SEARCH.png)
+
+---
+
 ## 🌟 ¿Por qué Git AST Search? (Perspectivas del Proyecto)
 
 ### 1. Perspectiva de Rendimiento: Escaneo Cero-Redundante en O(1)
