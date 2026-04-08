@@ -144,16 +144,24 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 
 ## 🎮 Controles de la TUI
 
-### Modo Normal (Default)
+### Modo Insert (Default)
 
 | Atajo | Acción |
 |-------|--------|
+| `Cualquiera` | Escribir patrón AST |
+| `Enter` | Iniciar búsqueda |
+| `Esc` | Volver al Modo Normal |
+
+### Modo Normal
+
+| Atajo | Acción |
+|-------|--------|
+| `i` / `a` | Entrar en Modo Insert |
 | `j` / `↓` | Siguiente resultado |
 | `k` / `↑` | Resultado anterior |
 | `h` / `←` | Página anterior |
 | `l` / `→` | Página siguiente |
-| `Enter` | Iniciar búsqueda |
-| `Esc` | Abortar búsqueda / Cerrar |
+| `Esc` | Limpiar selección / Cerrar |
 | `Ctrl+H` | Panel de historial |
 | `Ctrl+B` | Toggle sidebar |
 | `gg` | Ir al primer resultado |
@@ -203,6 +211,8 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 ---
 
 ## 🔍 Ejemplos de Búsqueda Semántica Multipolíglota
+
+> **📖 Pro Tip:** ¡Revisa nuestro renovado [Catálogo de Exploración de Código](./code_exploration.md) que contiene **260 patrones AST listos para usar** (incluyendo 88 Fundamentales y 88 para Rust Profesional) para potenciar tus auditorías!
 
 Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nodos) y variables como `$A`, `$B` (nodos específicos). Aquí tienes casos de uso reales para auditoría de código en el historial:
 

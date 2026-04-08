@@ -144,16 +144,24 @@ Start the tool by passing the Git repository path as an argument (defaults to th
 
 ## 🎮 TUI Controls
 
-### Normal Mode (Default)
+### Insert Mode (Default)
 
 | Shortcut | Action |
 |----------|--------|
+| `Any` | Type AST Pattern |
+| `Enter` | Start search |
+| `Esc` | Exit to Normal Mode |
+
+### Normal Mode
+
+| Shortcut | Action |
+|----------|--------|
+| `i` / `a` | Enter Insert Mode |
 | `j` / `↓` | Next result |
 | `k` / `↑` | Previous result |
 | `h` / `←` | Previous page |
 | `l` / `→` | Next page |
-| `Enter` | Start search |
-| `Esc` | Abort search / Close |
+| `Esc` | Clear selection / Close |
 | `Ctrl+H` | History panel |
 | `Ctrl+B` | Toggle sidebar |
 | `gg` | Go to first result |
@@ -203,6 +211,8 @@ Start the tool by passing the Git repository path as an argument (defaults to th
 ---
 
 ## 🔍 Examples of Multi-Polyglot Semantic Search
+
+> **📖 Pro Tip:** Check out our newly expanded [Code Exploration Catalog](./code_exploration.md) which contains **260 ready-to-use AST patterns** (including 88 Fundamental and 88 Professional Rust patterns) to supercharge your codebase audits!
 
 Harness the power of `ast-grep` using the `$$$` wildcard (zero or more nodes) and variables like `$A`, `$B` (specific nodes). Here are real-world use cases for code auditing in history:
 
