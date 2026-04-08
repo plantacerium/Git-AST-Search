@@ -1,12 +1,12 @@
-# 🦀 Git AST Search TUI
+# 🦀 Git AST Search TUI v0.2.1
 
 **Git AST Search** es una herramienta de terminal (TUI) de alto rendimiento diseñada para la minería de código histórica. A diferencia de las herramientas de búsqueda tradicionales basadas en texto plano o expresiones regulares (Regex), esta herramienta utiliza **Análisis de Árboles de Sintaxis Abstracta (AST)** para encontrar estructuras de código exactas, ignorando comentarios, espacios en blanco o saltos de línea, a través de *toda* la historia de un repositorio Git.
 
-### ✨ Novedades en v0.2.0
-* **Arquitectura 100% Modular**: Lógica principal desacoplada en `engine`, `commands` y `modules`. El `main.rs` ahora está dedicado exclusivamente a la UI interactiva.
+### ✨ Novedades en v0.2.1
+* **UI Modular de Alto Nivel**: Refactorización completa de la interfaz en componentes independientes (`sidebar`, `results_grid`, `search_bar`, `status_bar`).
+* **Lógica de Layout Atómica**: Cálculos de dimensiones desacoplados de la lógica de renderizado para mayor estabilidad y fluidez.
 * **Sistema de Comandos (Slash Commands)**: Soporte completo para comandos `/search`, `/export`, `/bookmark`, `/sessions`, `/patterns` y sus alias.
 * **Navegación tipo Vim Avanzada**: Historial de autocompletado con `Tab`, teclas `j/k/h/l` para resultados/páginas, y Modo Visual `v`.
-* **Exportación Rápida**: Puedes arrojar resultados de búsquedas en AST directamente a `json` o `csv` con `/export`.
 
 ---
 
@@ -28,52 +28,69 @@ Ya no está limitado a Rust. El motor detecta automáticamente la extensión del
 * ☕ Java (`.java`)
 * ⚙️ C / C++ (`.c`, `.cpp`, `.cc`, `.cxx`)
 
-### 3. Perspectiva de Experiencia de Usuario (UI/UX)
-Diseñado para el "Flujo de trabajo Terminal-First". Incluye un historial de búsquedas lateral para mantener el contexto de tus investigaciones y una vista de resultados en formato de tarjetas con paginación fluida, evitando saturar la pantalla.
+### 3. Perspectiva de Experiencia de Usuario (UI/UX) Modular
+Diseñado para el "Flujo de trabajo Terminal-First". v0.2.1 introduce una arquitectura de UI basada en componentes atómicos. Esto permite una granularidad total:
+* **Sidebar Histórico**: Mantén el contexto de todas tus investigaciones previas.
+* **Search Contextual**: Input inteligente que cambia dinámicamente según el modo (Search vs Command).
+* **Grilla de Alto Rendimiento**: Paginación optimizada para no saturar el buffer de la terminal incluso con miles de resultados.
 
-### 4. Perspectiva de Navegación (Vim-style)
-Controles familiares para usuarios de Vim con modo Normal, Comando, Visual y Goto. Incluye autocompletado de comandos y shortcuts configurables.
+### 4. Perspectiva de Navegación Profesional (Vim-style)
+Controles familiares para desarrolladores. Implementa un sistema de estados (`NavMode`) que permite alternar entre navegación rápida, selección visual de bloques de código y ejecución de comandos sin levantar las manos del teclado.
 
 ---
 
-## 📁 Estructura del Proyecto v2
+## 📁 Estructura del Proyecto v0.2.1
 
 ```
 Git-AST-Search/
 ├── src/
-│   ├── main.rs                   # Entry point
+│   ├── main.rs                   # Loop principal y orquestación
+│   ├── ui/                        # Interfaz de Usuario Modular
+│   │   ├── mod.rs                # Punto de entrada de UI
+│   │   ├── app.rs                # Estado global y manejadores de App
+│   │   ├── render.rs             # Funciones de dibujo (Frame orchestration)
+│   │   ├── layout.rs             # Cálculos geométricos y constraints
+│   │   ├── events.rs             # Bridge de eventos crossterm (WIP)
+│   │   └── components/           # Widgets atómicos
+│   │       ├── mod.rs            # Export de componentes
+│   │       ├── sidebar.rs        # Panel lateral de historial
+│   │       ├── results_grid.rs   # Grilla dinámica de resultados
+│   │       ├── search_bar.rs     # Input de comandos/patrones
+│   │       ├── status_bar.rs     # Información de modo y estado
+│   │       └── help_overlay.rs   # Pantallas de ayuda y bienvenida
 │   ├── modules/                   # Modelos de datos
 │   │   ├── mod.rs
-│   │   ├── search_result.rs       # SearchResult
-│   │   ├── chat_entry.rs          # ChatEntry
-│   │   ├── session.rs             # Session, SessionManager
-│   │   ├── bookmark.rs            # Bookmark, BookmarkManager
-│   │   ├── filter.rs              # Filter
-│   │   └── config.rs              # AppConfig
-│   ├── commands/                  # Sistema de comandos slash
+│   │   ├── search_result.rs       # Entidad SearchResult
+│   │   ├── chat_entry.rs          # Modelo de historial de búsqueda
+│   │   ├── session.rs             # Persistencia y gestión de sesiones
+│   │   ├── bookmark.rs            # Marcadores de resultados
+│   │   ├── filter.rs              # Lógica de filtrado
+│   │   └── config.rs              # Configuración y Temas
+│   ├── commands/                  # Engine de Comandos Slash
 │   │   ├── mod.rs
-│   │   ├── parser.rs              # CommandParser, ParsedCommand
-│   │   ├── executor.rs            # CommandExecutor
-│   │   ├── registry.rs            # CommandRegistry
-│   │   ├── autocomplete.rs        # Autocomplete
-│   │   └── commands/
+│   │   ├── parser.rs              # Parseo de comandos /
+│   │   ├── executor.rs            # Ejecutor de lógica de comandos
+│   │   ├── registry.rs            # Registro central de comandos
+│   │   ├── autocomplete.rs         # Sugerencias y autocompletado
+│   │   └── commands/              # Implementaciones individuales
 │   │       ├── mod.rs
-│   │       ├── search.rs          # /search
-│   │       └── export.rs          # /export
-│   ├── navigation/               # Navegación y modos
+│   │       ├── search.rs          # Comando /search
+│   │       └── export.rs          # Comando /export
+│   ├── navigation/               # Navegación y Modos (Vim-style)
 │   │   ├── mod.rs                 # NavigationState
 │   │   └── modes.rs               # NavMode enum
-│   ├── languages/                 # Detección de lenguajes
+│   ├── languages/                 # Parsers y Detección Multipolíglota
 │   │   ├── mod.rs
-│   │   ├── registry.rs            # Language, LanguageRegistry, BuiltinPattern
-│   │   ├── detector.rs            # LanguageDetector
-│   │   └── patterns.rs            # Patrones por lenguaje
-│   └── engine/
-│       └── mod.rs                 # GitEngine
-├── docs/                          # Documentación
-├── assets/
-├── Cargo.toml
-└── README.md
+│   │   ├── registry.rs            # Registro de lenguajes y patrones
+│   │   ├── detector.rs            # Detección automática por extensión
+│   │   └── patterns.rs            # Definición de patrones AST base
+│   └── engine/                    # Core: Git2 + AST-Grep + Rayon
+│       └── mod.rs                 # Motor de búsqueda e integración Git
+├── assets/                        # Recursos visuales y screenshots
+├── docs/                          # Documentación detallada
+├── Cargo.toml                     # Dependencias y meta del proyecto
+├── README.md                      # Documentación en Español
+└── README_ENG.md                  # English Documentation
 ```
 
 ---
@@ -183,30 +200,6 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 | `/export csv <path>` | Exportar a CSV |
 | `/export csv --all` | Incluir todos los resultados |
 
-### Comandos de Sesión
-
-| Comando | Descripción |
-|---------|-------------|
-| `/save [nombre]` | Guardar sesión actual |
-| `/load [nombre]` | Cargar sesión |
-| `/sessions` | Listar sesiones guardadas |
-
-### Comandos de Bookmark
-
-| Comando | Descripción |
-|---------|-------------|
-| `/bookmark <label>` | Guardar bookmark |
-| `/bookmarks` | Listar bookmarks |
-
-### Comandos de Configuración y Ayuda
-
-| Comando | Descripción |
-|---------|-------------|
-| `/patterns [lang]` | Ver patrones AST incorporados |
-| `/help [topic]` | Ayuda sobre atajos y comandos |
-| `/clear` | Limpiar resultados |
-| `/toggle` | Mostrar/Ocultar barra lateral |
-
 ---
 
 ## 🔍 Ejemplos de Búsqueda Semántica Multipolíglota
@@ -270,47 +263,44 @@ Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nod
 
 ---
 
-## ⚙️ Arquitectura Modular
+## ⚙️ Arquitectura de Sistemas (v0.2.1)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                          main.rs                            │
-│           (Entry point ~400 líneas, delegación a UI)        │
+│           (Entry point ~50 líneas, Loop de Eventos)         │
 └─────────────────────────────┬───────────────────────────────┘
                               │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-│    modules/   │     │   commands/   │     │  navigation/  │
-│   (Modelos)   │     │   (Parser)    │     │   (Estados)   │
-├───────────────┤     ├───────────────┤     ├───────────────┤
-│ SearchResult  │     │ CommandParser │     │ NavigationState│
-│ ChatEntry     │     │ Executor     │     │ NavMode       │
-│ Session       │     │ Registry     │     │               │
-│ Filter        │     │ Autocomplete │     │               │
-│ Config        │     │             │     │               │
-└───────────────┘     └───────────────┘     └───────────────┘
-        │                    │                    │
-        └────────────────────┼────────────────────┘
-                             ▼
-                    ┌───────────────┐
-                    │   languages/   │
-                    │ (Detección)   │
-                    ├───────────────┤
-                    │ Language      │
-                    │ Detector      │
-                    │ Registry      │
-                    │ Patterns      │
-                    └───────────────┘
-                             │
-                             ▼
-                    ┌───────────────┐
-                    │    engine/    │
-                    │ (Git + AST)   │
-                    ├───────────────┤
-                    │ GitEngine     │
-                    │ AST Search    │
-                    └───────────────┘
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌───────────────┐      ┌───────────────┐     ┌───────────────┐
+│      ui/      │      │   commands/   │     │  navigation/  │
+│ (Componentes) │      │   (Ingest)    │     │   (FSM)       │
+├───────────────┤      ├───────────────┤     ├───────────────┤
+│ app.rs        │◄────►│ CommandParser │◄───►│ NavMode       │
+│ layout.rs     │      │ Executor      │     │ NavState      │
+│ render.rs     │      │ Autocomplete  │     │               │
+│ components/   │      └──────┬────────┘     └───────────────┘
+└───────────────┘             │
+        │                     │
+        ▼                     ▼
+┌───────────────┐      ┌───────────────┐
+│     modules/  │      │   languages/  │
+│    (Modelos)  │      │  (TreeSitter) │
+├───────────────┤      ├───────────────┤
+│ SearchResult  │      │ LanguageReg   │
+│ ChatEntry     │      │ Detector      │
+│ Session       │      │ Patterns      │
+└───────────────┘      └──────┬────────┘
+                              │
+                              ▼
+                     ┌───────────────┐
+                     │    engine/    │
+                     │ (Git + AST)   │
+                     ├───────────────┤
+                     │ RevWalk       │
+                     │ Blobs Cache   │
+                     └───────────────┘
 ```
 
 ### Flujo de Datos
@@ -336,10 +326,10 @@ UI Input (TextArea) → CommandParser → CommandExecutor
                        AstGrep (pattern)
                               │
                               ▼
-                    Message::ResultFound
+                     Message::ResultFound
                               │
                               ▼
-                    App.results (UI update)
+                     App.results (UI update)
 ```
 
 ---
