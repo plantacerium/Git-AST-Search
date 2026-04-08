@@ -2,9 +2,15 @@
 
 **Git AST Search** es una herramienta de terminal (TUI) de alto rendimiento diseñada para la minería de código histórica. A diferencia de las herramientas de búsqueda tradicionales basadas en texto plano o expresiones regulares (Regex), esta herramienta utiliza **Análisis de Árboles de Sintaxis Abstracta (AST)** para encontrar estructuras de código exactas, ignorando comentarios, espacios en blanco o saltos de línea, a través de *toda* la historia de un repositorio Git.
 
+### ✨ Novedades en v0.2.0
+* **Arquitectura 100% Modular**: Lógica principal desacoplada en `engine`, `commands` y `modules`. El `main.rs` ahora está dedicado exclusivamente a la UI interactiva.
+* **Sistema de Comandos (Slash Commands)**: Soporte completo para comandos `/search`, `/export`, `/bookmark`, `/sessions`, `/patterns` y sus alias.
+* **Navegación tipo Vim Avanzada**: Historial de autocompletado con `Tab`, teclas `j/k/h/l` para resultados/páginas, y Modo Visual `v`.
+* **Exportación Rápida**: Puedes arrojar resultados de búsquedas en AST directamente a `json` o `csv` con `/export`.
+
 ---
 
-![GIT AST SEARCH](./assets/GIT_AST_SEARCH.png)
+![GIT AST SEARCH](./assets/GIT_AST_SEARCH_V2.JPG)
 
 ---
 
@@ -25,17 +31,60 @@ Ya no está limitado a Rust. El motor detecta automáticamente la extensión del
 ### 3. Perspectiva de Experiencia de Usuario (UI/UX)
 Diseñado para el "Flujo de trabajo Terminal-First". Incluye un historial de búsquedas lateral para mantener el contexto de tus investigaciones y una vista de resultados en formato de tarjetas con paginación fluida, evitando saturar la pantalla.
 
+### 4. Perspectiva de Navegación (Vim-style)
+Controles familiares para usuarios de Vim con modo Normal, Comando, Visual y Goto. Incluye autocompletado de comandos y shortcuts configurables.
+
+---
+
+## 📁 Estructura del Proyecto v2
+
+```
+Git-AST-Search/
+├── src/
+│   ├── main.rs                   # Entry point
+│   ├── modules/                   # Modelos de datos
+│   │   ├── mod.rs
+│   │   ├── search_result.rs       # SearchResult
+│   │   ├── chat_entry.rs          # ChatEntry
+│   │   ├── session.rs             # Session, SessionManager
+│   │   ├── bookmark.rs            # Bookmark, BookmarkManager
+│   │   ├── filter.rs              # Filter
+│   │   └── config.rs              # AppConfig
+│   ├── commands/                  # Sistema de comandos slash
+│   │   ├── mod.rs
+│   │   ├── parser.rs              # CommandParser, ParsedCommand
+│   │   ├── executor.rs            # CommandExecutor
+│   │   ├── registry.rs            # CommandRegistry
+│   │   ├── autocomplete.rs        # Autocomplete
+│   │   └── commands/
+│   │       ├── mod.rs
+│   │       ├── search.rs          # /search
+│   │       └── export.rs          # /export
+│   ├── navigation/               # Navegación y modos
+│   │   ├── mod.rs                 # NavigationState
+│   │   └── modes.rs               # NavMode enum
+│   ├── languages/                 # Detección de lenguajes
+│   │   ├── mod.rs
+│   │   ├── registry.rs            # Language, LanguageRegistry, BuiltinPattern
+│   │   ├── detector.rs            # LanguageDetector
+│   │   └── patterns.rs            # Patrones por lenguaje
+│   └── engine/
+│       └── mod.rs                 # GitEngine
+├── docs/                          # Documentación
+├── assets/
+├── Cargo.toml
+└── README.md
+```
+
 ---
 
 ## 🚀 Stack Tecnológico
-
-Construido sobre un ecosistema de **Rust** enfocado en seguridad de memoria y paralelismo masivo:
 
 | Componente | Tecnología | Descripción |
 | :--- | :--- | :--- |
 | **Interfaz (TUI)** | `ratatui` | Framework de renderizado inmediato para interfaces de terminal fluidas. |
 | **Motor AST** | `ast-grep` | Framework de búsqueda estructural super-rápido basado en `tree-sitter`. |
-| **Motor Git** | `libgit2` | Interacción en C puro y bajo nivel con la base de datos de objetos de Git. |
+| **Motor Git** | `git2` | Interacción en C puro y bajo nivel con la base de datos de objetos de Git. |
 | **Deduplicación** | `dashmap` | Estructura de datos concurrente `Lock-Free` para el registro global de Blobs. |
 | **Paralelismo** | `rayon` | Distribución dinámica de *chunks* de commits a través de todos los núcleos de CPU. |
 | **Async & Eventos** | `tokio` / `mpsc` | Canales para enviar resultados desde el motor hacia la UI sin bloquear el renderizado. |
@@ -58,9 +107,8 @@ sudo apt install cmake libssl-dev libgit2-dev zlib1g-dev
 
 **Compilación del proyecto:**
 ```bash
-git clone [https://github.com/plantacerium/Git-AST-Search](https://github.com/plantacerium/Git-AST-Search)
+git clone https://github.com/plantacerium/Git-AST-Search
 cd Git-AST-Search
-# Compilado con LTO (Link Time Optimization) y Strip para máxima velocidad
 cargo build --release
 ```
 
@@ -71,18 +119,93 @@ cargo build --release
 Inicia la herramienta pasando la ruta del repositorio Git como argumento (por defecto es el directorio actual):
 
 ```bash
-# Analizar el repositorio actual
 ./target/release/git-ast-search .
-
-# Analizar un proyecto externo masivo
 ./target/release/git-ast-search /home/user/dev/linux
 ```
 
-### 🎮 Controles de la TUI
-* **Teclado Alfanumérico:** Escribe tu patrón AST directamente en la barra de búsqueda inferior.
-* **Enter:** Inicia la búsqueda estructural en todas las ramas y commits alcanzables.
-* **Flechas Izquierda (<-) / Derecha (->):** Navega entre las páginas de resultados.
-* **Esc:** Aborta la búsqueda actual o cierra la aplicación.
+---
+
+## 🎮 Controles de la TUI
+
+### Modo Normal (Default)
+
+| Atajo | Acción |
+|-------|--------|
+| `j` / `↓` | Siguiente resultado |
+| `k` / `↑` | Resultado anterior |
+| `h` / `←` | Página anterior |
+| `l` / `→` | Página siguiente |
+| `Enter` | Iniciar búsqueda |
+| `Esc` | Abortar búsqueda / Cerrar |
+| `Ctrl+H` | Panel de historial |
+| `Ctrl+B` | Toggle sidebar |
+| `gg` | Ir al primer resultado |
+| `G` | Ir al último resultado |
+
+### Modo Comando
+
+| Atajo | Acción |
+|-------|--------|
+| `/` | Entrar en modo comando |
+| `:` | Modo comando vim |
+| `Tab` | Autocompletar |
+| `↑` / `↓` | Historial de comandos |
+
+---
+
+## 💻 Comandos Disponibles
+
+### Comandos de Búsqueda
+
+| Comando | Descripción |
+|---------|-------------|
+| `/search <patrón>` | Buscar patrón AST en el historial |
+| `/search <patrón> --lang <lenguaje>` | Filtrar por lenguaje |
+| `/search <patrón> --author <nombre>` | Filtrar por autor |
+| `/search <patrón> --after <fecha>` | Filtrar por fecha |
+
+### Comandos de Navegación
+
+| Comando | Descripción |
+|---------|-------------|
+| `/goto <destino>` | Ir a commit/archivo/línea |
+| `/next` | Siguiente resultado |
+| `/prev` | Resultado anterior |
+| `/first` | Primer resultado |
+| `/last` | Último resultado |
+| `/page <n>` | Ir a página n |
+
+### Comandos de Exportación
+
+| Comando | Descripción |
+|---------|-------------|
+| `/export json <path>` | Exportar a JSON |
+| `/export csv <path>` | Exportar a CSV |
+| `/export csv --all` | Incluir todos los resultados |
+
+### Comandos de Sesión
+
+| Comando | Descripción |
+|---------|-------------|
+| `/save [nombre]` | Guardar sesión actual |
+| `/load [nombre]` | Cargar sesión |
+| `/sessions` | Listar sesiones guardadas |
+
+### Comandos de Bookmark
+
+| Comando | Descripción |
+|---------|-------------|
+| `/bookmark <label>` | Guardar bookmark |
+| `/bookmarks` | Listar bookmarks |
+
+### Comandos de Configuración y Ayuda
+
+| Comando | Descripción |
+|---------|-------------|
+| `/patterns [lang]` | Ver patrones AST incorporados |
+| `/help [topic]` | Ayuda sobre atajos y comandos |
+| `/clear` | Limpiar resultados |
+| `/toggle` | Mostrar/Ocultar barra lateral |
 
 ---
 
@@ -92,39 +215,32 @@ Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nod
 
 ### 🦀 Rust (`.rs`)
 * **Buscar código "inseguro" (Unsafe blocks):**
-    Útil para auditar cuándo se introdujeron bloques de memoria manual.
     `unsafe { $$$ }`
 * **Encontrar antiguas fugas de memoria o desempaquetados de riesgo:**
     `$OBJ.unwrap()` o `$OBJ.expect($ANY)`
 * **Localizar errores silenciados explícitamente:**
     `let _ = $FUNC($$$);`
-* **Funciones que usaban `panic!` en versiones tempranas:**
-    `panic!($$$)`
 
 ### 🌐 JavaScript / TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`)
-* **Buscar `console.log` que se escaparon a producción en el pasado:**
+* **Buscar `console.log` que se escaparon a producción:**
     `console.log($$$)`
 * **Encontrar "Callback Hell" o promesas anidadas:**
     `$A.then(($B) => { $$$}).then(($C) => {$$$ })`
-* **Detectar el uso de igualdad débil (propenso a bugs):**
-    `$A == $B` o `$A != $B`
 * **Bloques `catch` vacíos (Fallos silenciosos):**
     ```javascript
     catch ($E) { }
     ```
 
 ### 🐍 Python (`.py`)
-* **Trampas de argumentos por defecto mutables (Bug clásico de Python):**
+* **Trampas de argumentos por defecto mutables:**
     `def $FUNC($ARG = []): $$$` o `def $FUNC($ARG = {}): $$$`
-* **Localizar bloques de captura de errores donde no se hizo nada (Silenced errors):**
+* **Bloques de captura de errores silenciados:**
     ```python
     try:
         $$$
     except $ERR:
         pass
     ```
-* **Buscar usos de `eval()` (Riesgo de inyección de código):**
-    `eval($$$)`
 
 ### 🐹 Go (`.go`)
 * **Identificar dónde se ignoraron errores deliberadamente:**
@@ -135,38 +251,99 @@ Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nod
         $$$
     }()
     ```
-* **Puntos críticos donde la aplicación forzaba cierres:**
-    `panic($$$)`
 
 ### ☕ Java (`.java`)
-* **Rastros de "Print Debugging" dejados por desarrolladores:**
-    `System.out.println($$$);` o `e.printStackTrace();`
+* **Rastros de "Print Debugging" dejados:**
+    `System.out.println($$$);`
 * **Captura excesivamente genérica de excepciones:**
     ```java
     catch (Exception $E) {
         $$$
     }
     ```
-* **Uso de la clase `Thread` directamente en lugar de `Executors`:**
-    `new Thread($$$).start();`
 
 ### ⚙️ C / C++ (`.c`, `.cpp`)
-* **Funciones inseguras de manipulación de cadenas (Buffer Overflows):**
+* **Funciones inseguras de manipulación de cadenas:**
     `strcpy($DEST, $SRC)` o `sprintf($$$)`
-* **Gestión de memoria manual (Posibles Memory Leaks):**
+* **Gestión de memoria manual:**
     `delete $PTR;` o `free($PTR);`
-* **Macros problemáticas del preprocesador:**
-    `#define $MACRO($ARGS) $$$`
-## ⚙️ Arquitectura Interna del Motor (Optimización)
 
-El núcleo del motor resuelve el problema del "Escaneo Cuadrático" clásico de las búsquedas en el historial de Git.
+---
 
-1.  **Recreación de la Topología:** Obtiene todos los `Oid` (Object IDs) de los commits desde `HEAD`.
-2.  **Chunking Local-Thread:** Divide los commits en lotes (chunks) de 100. Cada hilo de `Rayon` levanta su propia instancia de `Repository` (saltando cuellos de botella de mutex en C).
-3.  **El Muro de Caché (DashSet):** Por cada archivo (Tree Entry), extrae su Hash SHA-1 único. Si ese SHA-1 ya existe en nuestro `DashSet`, el hilo lo descarta en `O(1)`. Si es nuevo, lo convierte a texto y genera un árbol sintáctico `Tree-sitter` para la búsqueda.
+## ⚙️ Arquitectura Modular
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                          main.rs                            │
+│           (Entry point ~400 líneas, delegación a UI)        │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+        ┌────────────────────┼────────────────────┐
+        ▼                    ▼                    ▼
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│    modules/   │     │   commands/   │     │  navigation/  │
+│   (Modelos)   │     │   (Parser)    │     │   (Estados)   │
+├───────────────┤     ├───────────────┤     ├───────────────┤
+│ SearchResult  │     │ CommandParser │     │ NavigationState│
+│ ChatEntry     │     │ Executor     │     │ NavMode       │
+│ Session       │     │ Registry     │     │               │
+│ Filter        │     │ Autocomplete │     │               │
+│ Config        │     │             │     │               │
+└───────────────┘     └───────────────┘     └───────────────┘
+        │                    │                    │
+        └────────────────────┼────────────────────┘
+                             ▼
+                    ┌───────────────┐
+                    │   languages/   │
+                    │ (Detección)   │
+                    ├───────────────┤
+                    │ Language      │
+                    │ Detector      │
+                    │ Registry      │
+                    │ Patterns      │
+                    └───────────────┘
+                             │
+                             ▼
+                    ┌───────────────┐
+                    │    engine/    │
+                    │ (Git + AST)   │
+                    ├───────────────┤
+                    │ GitEngine     │
+                    │ AST Search    │
+                    └───────────────┘
+```
+
+### Flujo de Datos
+
+```
+UI Input (TextArea) → CommandParser → CommandExecutor
+                                              │
+                                              ▼
+                                     start_search()
+                                              │
+                                              ▼
+                                    mpsc::channel()
+                                              │
+                    ┌─────────────────────────┤
+                    ▼                         ▼
+             RevWalk (commits)        DashSet (blob cache)
+                    │                         │
+                    └─────────┬───────────────┘
+                              ▼
+                       par_chunks(100)
+                              │
+                              ▼
+                       AstGrep (pattern)
+                              │
+                              ▼
+                    Message::ResultFound
+                              │
+                              ▼
+                    App.results (UI update)
+```
 
 ---
 
 ## 📄 Licencia
+
 Este proyecto está distribuido bajo la Licencia MIT. Siéntete libre de usarlo, modificarlo y distribuirlo para empujar los límites de la minería de código estática.
-```

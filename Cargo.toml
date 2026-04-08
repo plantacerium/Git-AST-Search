@@ -1,40 +1,38 @@
 [package]
 name = "git-ast-search"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Plantacerium"]
 edition = "2021"
-description = "TUI de búsqueda estructural (AST) en el historial de Git"
+description = "TUI de búsqueda estructural (AST) en el historial de Git con sistema de comandos y multi-lenguaje"
 license = "MIT"
 
+[features]
+default = []
+vim_mode = []
+new_languages = []
+
 [dependencies]
-# --- Interfaz de Usuario (TUI) ---
 ratatui = "0.29.0"
 crossterm = "0.28"
 tui-textarea = { version = "0.7.0", default-features = false, features = ["ratatui", "crossterm"] }
 unicode-width = "0.1"
 
-# --- Motor de Búsqueda y Git ---
-# --- Motor de Búsqueda y Git ---
 git2 = "0.18"
 rayon = "1.8"
 ast-grep-core = "0.42.0"
 ast-grep-language = { version = "0.42.0", features = ["builtin-parser"] }
 
-# --- Optimización extrema de Blobs ---
-# DashMap para la deduplicación concurrente de OIDs de Git en O(1)
 dashmap = "5.5"
 
-# --- Runtime y Asincronía ---
 tokio = { version = "1.35", features = ["full"] }
 futures = "0.3"
 
-# --- Persistencia y Datos ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 directories = "5.0"
 
-# --- Utilidades ---
 anyhow = "1.0"
 thiserror = "1.0"
 log = "0.4"
@@ -45,4 +43,4 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = 'abort'
-strip = true # Reduce bin size for faster loading
+strip = true
