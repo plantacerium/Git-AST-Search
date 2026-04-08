@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -36,10 +36,12 @@ fn main() -> Result<()> {
 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                if app.handle_key(key) { break; }
-                // Check if command resulted in Quit
-                if app.nav_state.mode == NavMode::Normal && matches!(key.code, KeyCode::Enter) {
-                    // Quit is handled via apply_command_result
+                if key.kind == KeyEventKind::Press {
+                    if app.handle_key(key) { break; }
+                    // Check if command resulted in Quit
+                    if app.nav_state.mode == NavMode::Normal && matches!(key.code, KeyCode::Enter) {
+                        // Quit is handled via apply_command_result
+                    }
                 }
             }
         }
