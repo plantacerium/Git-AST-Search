@@ -150,6 +150,15 @@ impl<'a> App<'a> {
             return false;
         }
 
+        if self.nav_state.mode == NavMode::Insert {
+            match key.code {
+                KeyCode::Esc => { self.nav_state.set_mode(NavMode::Normal); }
+                KeyCode::Enter if !self.is_searching => self.start_search(None),
+                _ => { self.textarea.input(key); }
+            }
+            return false;
+        }
+
         // Normal mode
         match key.code {
             KeyCode::Esc => return true,
@@ -160,9 +169,10 @@ impl<'a> App<'a> {
             KeyCode::Char('j') | KeyCode::Down => { self.nav_state.select_next(); }
             KeyCode::Char('k') | KeyCode::Up => { self.nav_state.select_prev(); }
             KeyCode::Char('v') => { self.nav_state.set_mode(NavMode::Visual); }
+            KeyCode::Char('i') | KeyCode::Char('a') => { self.nav_state.set_mode(NavMode::Insert); }
             KeyCode::Char('?') => { self.nav_state.set_mode(NavMode::Help); }
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.nav_state.toggle_sidebar(); }
-            _ => { self.textarea.input(key); }
+            _ => {}
         }
         false
     }

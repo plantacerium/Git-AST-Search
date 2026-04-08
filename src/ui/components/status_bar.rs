@@ -21,6 +21,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             format!(" {} ", mode_ind),
             Style::default().fg(Color::Black).bg(match app.nav_state.mode {
                 NavMode::Normal => Color::Blue,
+                NavMode::Insert => Color::Cyan,
                 NavMode::Command => Color::Green,
                 NavMode::Visual => Color::Magenta,
                 NavMode::Help => Color::Yellow,
