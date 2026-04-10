@@ -13,6 +13,15 @@
 ![GIT AST SEARCH](./assets/GIT_AST_SEARCH_V2.JPG)
 
 ---
+## ⚡ Support
+<div align="center">
+
+**Made with ❤️ and ☕ by the Plantacerium**
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
+
+⭐**Star us on GitHub**⭐
+</div>
 
 ## 🌟 Why Git AST Search? (Project Perspectives)
 
@@ -340,6 +349,15 @@ UI Input (TextArea) → CommandParser → CommandExecutor
 ```
 
 ---
+## ⚡ Support
+<div align="center">
+
+**Made with ❤️ and ☕ by the Plantacerium**
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
+
+⭐**Star us on GitHub**⭐
+</div>
 
 ## 📄 License
 
