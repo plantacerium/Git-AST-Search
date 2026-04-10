@@ -13,7 +13,15 @@
 ![GIT AST SEARCH](./assets/GIT_AST_SEARCH_V2.JPG)
 
 ---
+## ⚡ Support
+<div align="center">
 
+**Made with ❤️ and ☕ by the Plantacerium**
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
+
+⭐**Star us on GitHub**⭐
+</div>
 ## 🌟 ¿Por qué Git AST Search? (Perspectivas del Proyecto)
 
 ### 1. Perspectiva de Rendimiento: Escaneo Cero-Redundante en O(1)
@@ -343,6 +351,15 @@ UI Input (TextArea) → CommandParser → CommandExecutor
 ```
 
 ---
+## ⚡ Support
+<div align="center">
+
+**Made with ❤️ and ☕ by the Plantacerium**
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
+
+⭐**Star us on GitHub**⭐
+</div>
 
 ## 📄 Licencia
 
