@@ -1,8 +1,8 @@
-# 🦀 Git AST Search TUI v0.2.1
+# 🦀 Git AST Search TUI v0.3.0
 
 **Git AST Search** es una herramienta de terminal (TUI) de alto rendimiento diseñada para la minería de código histórica. A diferencia de las herramientas de búsqueda tradicionales basadas en texto plano o expresiones regulares (Regex), esta herramienta utiliza **Análisis de Árboles de Sintaxis Abstracta (AST)** para encontrar estructuras de código exactas, ignorando comentarios, espacios en blanco o saltos de línea, a través de *toda* la historia de un repositorio Git.
 
-### ✨ Novedades en v0.2.1
+### ✨ Novedades en v0.3.0
 * **UI Modular de Alto Nivel**: Refactorización completa de la interfaz en componentes independientes (`sidebar`, `results_grid`, `search_bar`, `status_bar`).
 * **Lógica de Layout Atómica**: Cálculos de dimensiones desacoplados de la lógica de renderizado para mayor estabilidad y fluidez.
 * **Sistema de Comandos (Slash Commands)**: Soporte completo para comandos `/search`, `/export`, `/bookmark`, `/sessions`, `/patterns` y sus alias.
@@ -13,22 +13,39 @@
 ![GIT AST SEARCH](./assets/GIT_AST_SEARCH_V2.JPG)
 
 ---
-## ⚡ Support
-<div align="center">
 
-**Made with ❤️ and ☕ by the Plantacerium**
+## 🌟 ¿Por qué Git AST Search? (Propuesta de Valor Única)
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
+### 🗺️ Matriz de Capacidades y Posibilidades de un Vistazo
 
-⭐**Star us on GitHub**⭐
-</div>
-## 🌟 ¿Por qué Git AST Search? (Perspectivas del Proyecto)
+| Capacidad / Pilar | ¿Qué hace? | Interfaz / Comando | Valor Clave para Desarrolladores e IAs |
+|---|---|---|---|
+| **⏳ Minería Histórica** | Analiza miles de commits sin realizar `git checkout` | TUI, `query`, MCP | Búsqueda profunda sin saturar disco ni tocar el working tree |
+| **⚡ Deduplicación O(1)** | Lee blobs de Git directamente en RAM (`libgit2` + `DashSet`) | Automático en el core | Reduce tiempos de búsqueda de minutos a milisegundos |
+| **🌳 Precisión AST** | Reconocimiento sintáctico exacto (`$$$`, `$VAR`) con Tree-Sitter | `/search`, `query` | Cero falsos positivos por formateo, espacios o saltos de línea |
+| **🌐 Soporte Multipolíglota** | Detección automática de lenguaje por extensión en cada commit | Auto (`.rs`, `.js`, `.py`, `.go`...) | Auditorías homogéneas en monorepos y microservicios |
+| **🏺 AST Blame Semántico** | Arqueología de bugs: rastrea cuándo un bloque mutó o se introdujo | `/evolution`, `evolution` | Revela la causa raíz de mutaciones lógicas ignorando ruido de `fmt` |
+| **🛠️ Auto-Refactor Seguro** | Reescritura estructural con política `dry-run` por defecto | `/refactor`, `refactor --apply` | Modificaciones masivas seguras con previsualización de diffs |
+| **🦙 Inteligencia Local** | Traduce lenguaje natural a AST y sintetiza reportes con Ollama | `/ai`, `/report`, `ai` | No requiere memorizar sintaxis AST; genera diagnósticos Markdown |
+| **🔌 Servidor MCP Nativo** | Expone herramientas JSON-RPC para agentes (Cursor, Claude, IDE) | `mcp [REPO]` | Permite a las IAs invocar búsquedas y auditar repositorios |
+| **🤝 Flujo Simbiótico** | Interfaz visual en TUI compartida en paralelo con el agente | TUI Vim (`j/k/h/l`) + MCP | Mental model compartido: humano e IA ven lo mismo sin cajas negras |
 
-### 1. Perspectiva de Rendimiento: Escaneo Cero-Redundante en O(1)
-El motor no realiza *checkouts* de Git ni toca el disco duro. Lee directamente de la base de datos de objetos (Blobs). Además, implementa una **deduplicación concurrente agresiva**: si un archivo no ha cambiado entre 1,000 commits, el motor solo lo escanea *una vez*. Esto reduce tiempos de búsqueda de minutos a milisegundos en repositorios masivos.
+---
 
-### 2. Perspectiva Multipolíglota
-Ya no está limitado a Rust. El motor detecta automáticamente la extensión del archivo en cada commit y asigna el parser de lenguaje correcto en tiempo real. Soporta:
+### 1. Colaboración Simbiótica Humano ↔ IA (Shared Mental Model)
+* **El problema de las herramientas para agentes tradicionales:** Cuando un agente de IA ejecuta búsquedas en segundo plano en una herramienta invisible, el desarrollador humano pierde el contexto, la confianza y el control de lo que la IA está explorando.
+* **La solución de Git-AST-Search:** El desarrollador mantiene la **TUI abierta en su terminal** explorando visualmente con controles Vim (`j/k/h/l`), mientras que en el IDE el agente de IA formula patrones complejos, ejecuta auditorías o sugiere refactors mediante el **servidor MCP**. Ambos comparten exactamente la misma visión del código.
+
+### 2. Minería Histórica sin Checkout en O(1)
+El motor no realiza *checkouts* de Git ni toca el disco duro. Lee directamente de la base de datos de objetos (Blobs) mediante `libgit2`. Además, implementa una **deduplicación concurrente agresiva**: si un archivo no ha cambiado entre 1,000 commits, el motor solo lo escanea *una vez*. Esto reduce tiempos de búsqueda de minutos a milisegundos en repositorios masivos.
+
+### 3. Arqueología Semántica de Código (Git AST Blame)
+A diferencia de `git blame` tradicional (que atribuye cambios de autoría por meros saltos de línea o formateo de `rustfmt`/`prettier`), el **AST Blame Semántico** rastrea la evolución estructural real:
+* Identifica con precisión cuándo una función mutó de síncrona a `async`.
+* Señala exactamente qué commit y autor introdujo un bloque `unsafe` o llamada a `unwrap()`.
+
+### 4. Soporte Multipolíglota de Primera Clase
+Detecta la extensión del archivo en cada commit y asigna el parser de Tree-Sitter correspondiente en tiempo real:
 * 🦀 Rust (`.rs`)
 * 🌐 JavaScript / TypeScript (`.js`, `.jsx`, `.ts`, `.tsx`)
 * 🐹 Go (`.go`)
@@ -36,18 +53,12 @@ Ya no está limitado a Rust. El motor detecta automáticamente la extensión del
 * ☕ Java (`.java`)
 * ⚙️ C / C++ (`.c`, `.cpp`, `.cc`, `.cxx`)
 
-### 3. Perspectiva de Experiencia de Usuario (UI/UX) Modular
-Diseñado para el "Flujo de trabajo Terminal-First". v0.2.1 introduce una arquitectura de UI basada en componentes atómicos. Esto permite una granularidad total:
-* **Sidebar Histórico**: Mantén el contexto de todas tus investigaciones previas.
-* **Search Contextual**: Input inteligente que cambia dinámicamente según el modo (Search vs Command).
-* **Grilla de Alto Rendimiento**: Paginación optimizada para no saturar el buffer de la terminal incluso con miles de resultados.
-
-### 4. Perspectiva de Navegación Profesional (Vim-style)
-Controles familiares para desarrolladores. Implementa un sistema de estados (`NavMode`) que permite alternar entre navegación rápida, selección visual de bloques de código y ejecución de comandos sin levantar las manos del teclado.
+### 5. Navegación Profesional y Seguridad contra Modificaciones Accidentales
+* **Separación estricta de Lectura vs Reescritura:** Los escaneos históricos son de solo lectura. El motor de refactorización (`/refactor` o `git-ast-search refactor`) opera bajo la filosofía de **`dry-run` por defecto**, mostrando previsualizaciones de diffs antes de permitir cualquier escritura en disco (`--apply`).
 
 ---
 
-## 📁 Estructura del Proyecto v0.2.1
+## 📁 Estructura del Proyecto v0.3.0
 
 ```
 Git-AST-Search/
@@ -139,14 +150,42 @@ cargo build --release
 
 ---
 
-## 🛠️ Guía de Uso
+## 🛠️ Guía de Uso: Apuntar a Cualquier Repositorio
 
-Inicia la herramienta pasando la ruta del repositorio Git como argumento (por defecto es el directorio actual):
+`Git-AST-Search` es completamente portable e independiente de la carpeta donde se encuentre compilado. Puede auditar **cualquier repositorio Git en tu máquina** (local o en otra unidad de disco).
+
+### 1. En la TUI Interactiva
+Pasa la ruta del repositorio como primer argumento posicional (por defecto usa `.`, el directorio donde abres la terminal):
 
 ```bash
-./target/release/git-ast-search .
-./target/release/git-ast-search /home/user/dev/linux
+# Auditar el repositorio actual en la terminal
+git-ast-search .
+
+# Auditar otro proyecto por ruta relativa o absoluta
+git-ast-search /home/user/dev/linux
+git-ast-search "D:\proyectos\backend-api"
 ```
+
+### 2. En el Modo Headless (Línea de Comandos)
+Utiliza el flag opcional `--repo <RUTA>` para dirigir consultas a cualquier proyecto:
+
+```bash
+# Búsqueda estructural directa en otro repositorio
+git-ast-search query "$A.unwrap()" --repo "D:\proyectos\mi-app" --lang rust --format json
+
+# Arqueología de bugs / AST Blame en otro repositorio
+git-ast-search evolution "std::thread::spawn($$$)" --repo "D:\proyectos\mi-app" --format text
+
+# Refactorización estructural segura en otro repositorio
+git-ast-search refactor "$A.unwrap()" "$A.unwrap_or_default()" --repo "D:\proyectos\mi-app"
+```
+
+### 3. En el Servidor MCP (Para Agentes de IA en el IDE)
+Puedes iniciar el servidor MCP apuntando a un repositorio por defecto:
+```bash
+git-ast-search mcp "D:\proyectos\mi-app"
+```
+Además, en cada invocación de herramienta (`git_ast_search`, `git_ast_refactor`, `git_ast_evolution`), el agente de IA puede enviar el parámetro `"repo_path": "/otra/ruta"` para inspeccionar repositorios dinámicamente sin reiniciar el servidor.
 
 ---
 
@@ -164,14 +203,16 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 
 | Atajo | Acción |
 |-------|--------|
+| `Tab` | Alternar foco entre Resultados y Panel de Historial |
 | `i` / `a` | Entrar en Modo Insert |
-| `j` / `↓` | Siguiente resultado |
-| `k` / `↑` | Resultado anterior |
-| `h` / `←` | Página anterior |
-| `l` / `→` | Página siguiente |
-| `Esc` | Limpiar selección / Cerrar |
-| `Ctrl+H` | Panel de historial |
-| `Ctrl+B` | Toggle sidebar |
+| `j` / `↓` | Siguiente resultado (o siguiente consulta en Historial) |
+| `k` / `↑` | Resultado anterior (o consulta anterior en Historial) |
+| `Enter` / `r` | Re-ejecutar consulta histórica (en Historial) o Iniciar búsqueda |
+| `e` / `i` | Cargar consulta histórica al editor de texto (en Historial) |
+| `h` / `←` | Página anterior / Saltar a Historial |
+| `l` / `→` | Página siguiente / Saltar a Resultados |
+| `Esc` | Limpiar selección / Volver a Resultados / Salir |
+| `Ctrl+B` | Toggle sidebar lateral |
 | `gg` | Ir al primer resultado |
 | `G` | Ir al último resultado |
 
@@ -201,6 +242,8 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 
 | Comando | Descripción |
 |---------|-------------|
+| `/history` o `/hist` | Enfocar y activar panel de Historial interactivo |
+| `/replay [N]` o `/rerun` | Re-ejecutar consulta histórica por índice (default: última) |
 | `/goto <destino>` | Ir a commit/archivo/línea |
 | `/next` | Siguiente resultado |
 | `/prev` | Resultado anterior |
@@ -215,6 +258,52 @@ Inicia la herramienta pasando la ruta del repositorio Git como argumento (por de
 | `/export json <path>` | Exportar a JSON |
 | `/export csv <path>` | Exportar a CSV |
 | `/export csv --all` | Incluir todos los resultados |
+
+### 🤖 Comandos de Inteligencia Artificial (Ollama)
+
+| Comando | Descripción |
+|---------|-------------|
+| `/ai <pregunta>` | Traduce lenguaje natural a un patrón AST mediante Ollama y ejecuta la búsqueda |
+| `/report [tema]` | Genera un informe de auditoría ejecutiva en `audit_report.md` con los resultados |
+| `/refactor <P> -> <R>` | Previsualización segura de reescritura estructural (dry-run por defecto; `--apply` para escribir) |
+| `/evolution <patrón>` | Arqueología de bugs: Traza la línea cronológica y mutaciones históricas del patrón |
+
+---
+
+## 🤖 Integración con AIs y Agentes (CLI & MCP Server)
+
+`Git-AST-Search` está diseñado para ser utilizado directamente por modelos de lenguaje y entornos de desarrollo (como **Antigravity, Cursor, Claude y Windsurf**):
+
+### 1. Servidor MCP (Model Context Protocol)
+Inicia el servidor estándar sobre `stdio` para que tu asistente de IA lo invoque como una herramienta (tool) nativa:
+```bash
+git-ast-search mcp .
+```
+**Tools disponibles para la IA:**
+* `git_ast_search`: Búsqueda AST estructural en el historial en milisegundos.
+* `ai_query_ast`: Traducción de consultas en lenguaje natural a patrones AST usando Ollama.
+* `generate_git_ast_report`: Diagnósticos y reportes de auditoría generados por IA.
+* `list_ast_patterns`: Consulta del catálogo de patrones clasificados por lenguaje.
+* `git_ast_refactor`: Reescritura estructural segura de código con previsualización dry-run.
+* `git_ast_evolution`: Blame semántico para auditar cuándo mutó o se introdujo un bloque de código.
+
+### 2. Modo Headless (CLI & CI/CD)
+```bash
+# Búsqueda estructural directa con salida JSON limpia
+git-ast-search query '$A.unwrap()' --lang rust --format json
+
+# Consulta en lenguaje natural vía Ollama por terminal
+git-ast-search ai "encuentra bloques catch vacíos en typescript"
+
+# Previsualización segura (dry-run) de refactorización estructural
+git-ast-search refactor '$A.unwrap()' '$A.unwrap_or_default()' --lang rust
+
+# Aplicar refactorización estructural directamente al disco
+git-ast-search refactor '$A.unwrap()' '$A.unwrap_or_default()' --apply
+
+# Arqueología de bugs: rastrear cómo evolucionó un bloque en la historia
+git-ast-search evolution 'std::thread::spawn($$$)' --format text
+```
 
 ---
 
@@ -281,7 +370,7 @@ Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nod
 
 ---
 
-## ⚙️ Arquitectura de Sistemas (v0.2.1)
+## ⚙️ Arquitectura de Sistemas (v0.3.0)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -351,15 +440,6 @@ UI Input (TextArea) → CommandParser → CommandExecutor
 ```
 
 ---
-## ⚡ Support
-<div align="center">
-
-**Made with ❤️ and ☕ by the Plantacerium**
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plantacerium)
-
-⭐**Star us on GitHub**⭐
-</div>
 
 ## 📄 Licencia
 

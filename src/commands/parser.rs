@@ -20,6 +20,12 @@ pub enum Command {
     Prev,
     ToggleSidebar,
     Patterns { lang: Option<String> },
+    AiQuery { prompt: String },
+    AiReport { topic: Option<String> },
+    Refactor { pattern: String, rewrite: String, apply: bool },
+    Evolution { pattern: String },
+    History,
+    Replay { index: Option<usize> },
     Nop,
 }
 
@@ -105,9 +111,84 @@ impl CommandParser {
             "prev" | "p" => Command::Prev,
             "toggle" | "sidebar" => Command::ToggleSidebar,
             "patterns" => Command::Patterns { lang: parts.get(1).map(|s| s.to_string()) },
+            "ai" | "ollama" => {
+                let prompt = parts[1..].join(" ");
+                if prompt.is_empty() {
+                    return Err("Usage: /ai <prompt> (e.g. /ai find all unwrap calls in rust)".to_string());
+                }
+                Command::AiQuery { prompt }
+            }
+            "report" | "aireport" => {
+                let topic = if parts.len() > 1 { Some(parts[1..].join(" ")) } else { None };
+                Command::AiReport { topic }
+            }
+            "refactor" | "rewrite" => {
+                let rest = parts[1..].join(" ");
+                let apply = rest.contains("--apply");
+                let clean = rest.replace("--apply", "");
+                
+                let (pat, rew) = if clean.contains("===>") {
+                    let mut s = clean.splitn(2, "===>");
+                    (s.next().unwrap_or("").trim(), s.next().unwrap_or("").trim())
+                } else if clean.contains("->") {
+                    let mut s = clean.splitn(2, "->");
+                    (s.next().unwrap_or("").trim(), s.next().unwrap_or("").trim())
+                } else {
+                    return Err("Usage: /refactor <PATTERN> -> <REWRITE> [--apply]".to_string());
+                };
+
+                if pat.is_empty() || rew.is_empty() {
+                    return Err("Usage: /refactor <PATTERN> -> <REWRITE> [--apply]".to_string());
+                }
+
+                Command::Refactor {
+                    pattern: pat.to_string(),
+                    rewrite: rew.to_string(),
+                    apply,
+                }
+            }
+            "evolution" | "blame" => {
+                let pattern = parts[1..].join(" ");
+                if pattern.is_empty() {
+                    return Err("Usage: /evolution <PATTERN> (e.g. /evolution std::thread::spawn($$$))".to_string());
+                }
+                Command::Evolution { pattern }
+            }
+            "hist" | "history" => Command::History,
+            "replay" | "rerun" => {
+                let idx = parts.get(1).and_then(|s| s.parse::<usize>().ok());
+                Command::Replay { index: idx }
+            }
             _ => return Err(format!("Unknown command: /{}", cmd)),
         };
 
         Ok(ParsedCommand { command, raw_input: input.to_string() })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_history_and_replay() {
+        let p_hist = CommandParser::parse("/history").unwrap();
+        assert!(matches!(p_hist.command, Command::History));
+
+        let p_hist_alias = CommandParser::parse("/hist").unwrap();
+        assert!(matches!(p_hist_alias.command, Command::History));
+
+        let p_replay = CommandParser::parse("/replay 3").unwrap();
+        match p_replay.command {
+            Command::Replay { index } => assert_eq!(index, Some(3)),
+            _ => panic!("Expected Replay command"),
+        }
+
+        let p_rerun = CommandParser::parse("/rerun").unwrap();
+        match p_rerun.command {
+            Command::Replay { index } => assert_eq!(index, None),
+            _ => panic!("Expected Replay command"),
+        }
+    }
+}
+

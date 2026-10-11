@@ -2,6 +2,12 @@ pub mod modes;
 
 pub use modes::NavMode;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivePane {
+    Results,
+    History,
+}
+
 #[derive(Debug, Clone)]
 pub struct NavigationState {
     pub mode: NavMode,
@@ -12,6 +18,8 @@ pub struct NavigationState {
     pub command_buffer: String,
     /// Currently selected result index within current page
     pub selected_idx: usize,
+    pub active_pane: ActivePane,
+    pub history_selected_idx: usize,
 }
 
 impl NavigationState {
@@ -24,6 +32,8 @@ impl NavigationState {
             sidebar_visible: true,
             command_buffer: String::new(),
             selected_idx: 0,
+            active_pane: ActivePane::Results,
+            history_selected_idx: 0,
         }
     }
 
@@ -112,6 +122,44 @@ impl NavigationState {
 
     pub fn toggle_sidebar(&mut self) {
         self.sidebar_visible = !self.sidebar_visible;
+        if !self.sidebar_visible && self.active_pane == ActivePane::History {
+            self.active_pane = ActivePane::Results;
+        }
+    }
+
+    pub fn toggle_pane(&mut self) {
+        if !self.sidebar_visible {
+            self.sidebar_visible = true;
+            self.active_pane = ActivePane::History;
+        } else {
+            self.active_pane = match self.active_pane {
+                ActivePane::Results => ActivePane::History,
+                ActivePane::History => ActivePane::Results,
+            };
+        }
+    }
+
+    pub fn set_active_pane(&mut self, pane: ActivePane) {
+        if pane == ActivePane::History {
+            self.sidebar_visible = true;
+        }
+        self.active_pane = pane;
+    }
+
+    pub fn history_next(&mut self, total_history: usize) {
+        if total_history == 0 {
+            self.history_selected_idx = 0;
+            return;
+        }
+        if self.history_selected_idx + 1 < total_history {
+            self.history_selected_idx += 1;
+        }
+    }
+
+    pub fn history_prev(&mut self) {
+        if self.history_selected_idx > 0 {
+            self.history_selected_idx -= 1;
+        }
     }
 }
 
@@ -120,3 +168,31 @@ impl Default for NavigationState {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pane_toggle_and_history_nav() {
+        let mut nav = NavigationState::new();
+        assert_eq!(nav.active_pane, ActivePane::Results);
+        assert_eq!(nav.history_selected_idx, 0);
+
+        nav.toggle_pane();
+        assert_eq!(nav.active_pane, ActivePane::History);
+
+        nav.history_next(5);
+        assert_eq!(nav.history_selected_idx, 1);
+
+        nav.history_next(5);
+        assert_eq!(nav.history_selected_idx, 2);
+
+        nav.history_prev();
+        assert_eq!(nav.history_selected_idx, 1);
+
+        nav.toggle_pane();
+        assert_eq!(nav.active_pane, ActivePane::Results);
+    }
+}
+

@@ -8,6 +8,7 @@ use std::path::Path;
 use super::commands::{export_csv, export_json, execute_search_command};
 
 pub struct CommandExecutor {
+    repo_path: String,
     config: AppConfig,
     session_manager: SessionManager,
     bookmark_manager: BookmarkManager,
@@ -27,17 +28,26 @@ pub enum CommandResult {
     NextPage,
     PrevPage,
     ExportDone(String),
+    AiQuery(String),
+    AiReport(Option<String>),
+    FocusHistory,
+    ReplayHistory(usize),
 }
 
 impl CommandExecutor {
-    pub fn new() -> Self {
+    pub fn new(repo_path: String) -> Self {
         Self {
+            repo_path,
             config: AppConfig::load(),
             session_manager: SessionManager::new(),
             bookmark_manager: BookmarkManager::new(),
             registry: CommandRegistry::new(),
             lang_registry: LanguageRegistry::new(),
         }
+    }
+
+    pub fn set_repo_path(&mut self, repo_path: String) {
+        self.repo_path = repo_path;
     }
 
     pub fn execute(&mut self, parsed: ParsedCommand, results: &[SearchResult], selected_idx: usize) -> CommandResult {
@@ -203,6 +213,42 @@ impl CommandExecutor {
             Command::Next => CommandResult::NextPage,
             Command::Prev => CommandResult::PrevPage,
             Command::ToggleSidebar => CommandResult::ToggleSidebar,
+            Command::AiQuery { prompt } => CommandResult::AiQuery(prompt),
+            Command::AiReport { topic } => CommandResult::AiReport(topic),
+            Command::Refactor { pattern, rewrite, apply } => {
+                let dry_run = !apply;
+                match crate::engine::RefactorEngine::execute(&self.repo_path, &pattern, &rewrite, dry_run, None) {
+                    Ok(res) => {
+                        let mode_str = if dry_run { "[DRY RUN PREVIEW - No files modified]" } else { "[APPLIED TO DISK]" };
+                        let mut msg = format!("🛠 {} Matches: {} across {} files\n", mode_str, res.total_matches, res.files_affected);
+                        for (idx, d) in res.diffs.iter().take(5).enumerate() {
+                            msg.push_str(&format!("{}. {}:{}\n  - {}\n  + {}\n", idx + 1, d.file_path, d.line_number, d.original, d.replacement));
+                        }
+                        if res.diffs.len() > 5 {
+                            msg.push_str(&format!("... and {} more diffs.", res.diffs.len() - 5));
+                        }
+                        CommandResult::Success(Some(msg))
+                    }
+                    Err(e) => CommandResult::Error(format!("Refactor failed: {}", e)),
+                }
+            }
+            Command::Evolution { pattern } => {
+                match crate::engine::EvolutionEngine::trace(&self.repo_path, &pattern, None) {
+                    Ok(timeline) => {
+                        let mut msg = format!("🏺 Evolution Timeline for '{}' ({} events across {} commits):\n", pattern, timeline.total_occurrences, timeline.total_commits_analyzed);
+                        for (idx, h) in timeline.history.iter().take(6).enumerate() {
+                            msg.push_str(&format!("{}. [{}] {} by {} on {}: {}:{}\n", idx + 1, h.action, h.commit_short, h.author, h.date, h.file_path, h.line_number));
+                        }
+                        if timeline.history.len() > 6 {
+                            msg.push_str(&format!("... and {} earlier milestone events.", timeline.history.len() - 6));
+                        }
+                        CommandResult::Success(Some(msg))
+                    }
+                    Err(e) => CommandResult::Error(format!("Evolution trace failed: {}", e)),
+                }
+            }
+            Command::History => CommandResult::FocusHistory,
+            Command::Replay { index } => CommandResult::ReplayHistory(index.unwrap_or(0)),
             Command::Nop => CommandResult::Success(None),
         }
     }
@@ -213,5 +259,5 @@ impl CommandExecutor {
 }
 
 impl Default for CommandExecutor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self { Self::new(".".to_string()) }
 }

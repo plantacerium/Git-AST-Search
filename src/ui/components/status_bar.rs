@@ -16,6 +16,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     };
     let status = app.status_message.as_deref().unwrap_or("Ready");
 
+    let pane_ind = match app.nav_state.active_pane {
+        crate::navigation::ActivePane::Results => "[Results ⇆ Tab]",
+        crate::navigation::ActivePane::History => "[📜 History ⇆ Tab]",
+    };
+
     let bar = Line::from(vec![
         Span::styled(
             format!(" {} ", mode_ind),
@@ -32,6 +37,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             format!("[{}]", mode_name),
             Style::default().fg(Color::DarkGray),
         ),
+        Span::raw(" "),
+        Span::styled(pane_ind, Style::default().fg(if app.nav_state.active_pane == crate::navigation::ActivePane::History { Color::Cyan } else { Color::DarkGray })),
         Span::raw(" "),
         Span::styled(page_info, Style::default().fg(Color::Cyan)),
         Span::raw(" │ "),

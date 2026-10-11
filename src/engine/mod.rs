@@ -8,6 +8,12 @@ use git2::{Oid, Repository};
 use rayon::prelude::*;
 use std::sync::{mpsc::Sender, Arc};
 
+pub mod evolution;
+pub mod refactor;
+
+pub use evolution::EvolutionEngine;
+pub use refactor::RefactorEngine;
+
 pub struct GitEngine {
     repo_path: String,
 }
@@ -27,7 +33,7 @@ impl GitEngine {
         &self.repo_path
     }
 
-    fn to_support_lang(lang: Language) -> Option<SupportLang> {
+    pub fn to_support_lang(lang: Language) -> Option<SupportLang> {
         match lang {
             Language::Rust => Some(SupportLang::Rust),
             Language::JavaScript => Some(SupportLang::JavaScript),
@@ -122,5 +128,20 @@ impl GitEngine {
         });
 
         let _ = tx.send(Message::SearchFinished);
+    }
+
+    /// Synchronous search returning all collected results (used by CLI headless and MCP)
+    pub fn search_sync(repo_path: &str, pattern: &str) -> Result<Vec<SearchResult>, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        Self::run_search(repo_path, pattern.to_string(), tx);
+        let mut results = Vec::new();
+        while let Ok(msg) = rx.recv() {
+            match msg {
+                Message::ResultFound(r) => results.push(r),
+                Message::SearchFinished => break,
+                Message::Error(e) => return Err(e),
+            }
+        }
+        Ok(results)
     }
 }

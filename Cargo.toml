@@ -37,6 +37,8 @@ anyhow = "1.0"
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10"
+ureq = { version = "2.10", features = ["json"] }
+ignore = "0.4"
 
 [profile.release]
 opt-level = 3

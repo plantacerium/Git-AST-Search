@@ -11,14 +11,25 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<_> = app.results.iter().skip(start_idx).take(per_page).collect();
     let count = items.len();
 
-    let title = format!(
-        " Results (Page {}/{} — Total: {}) ",
-        page + 1,
-        app.nav_state.total_pages(),
-        total
-    );
+    let is_results_active = app.nav_state.active_pane == crate::navigation::ActivePane::Results;
+    let title = if is_results_active {
+        format!(
+            " 🌳 Results [ACTIVE: j/k, h/l, v] (Page {}/{} — Total: {}) ",
+            page + 1,
+            app.nav_state.total_pages(),
+            total
+        )
+    } else {
+        format!(
+            " 🌳 Results [Previewing History] (Page {}/{} — Total: {}) ",
+            page + 1,
+            app.nav_state.total_pages(),
+            total
+        )
+    };
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_style(Style::default().fg(if is_results_active { Color::Reset } else { Color::DarkGray }))
         .title(title)
         .border_type(BorderType::Rounded);
     
@@ -50,8 +61,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         let h_chunks = calculate_grid_cols(v_chunks[row_idx], cols as u16);
 
         let is_selected = (start_idx + i) == app.nav_state.global_selected();
-        let border_style = if is_selected {
+        let border_style = if is_selected && is_results_active {
             Style::default().fg(Color::Cyan)
+        } else if is_selected {
+            Style::default().fg(Color::DarkGray)
         } else {
             Style::default()
         };
