@@ -18,6 +18,9 @@ pub enum Command {
     Refresh,
     Next,
     Prev,
+    First,
+    Last,
+    Page { page: usize },
     ToggleSidebar,
     Patterns { lang: Option<String> },
     AiQuery { prompt: String },
@@ -76,7 +79,21 @@ impl CommandParser {
                 Command::Search { pattern: pattern_parts.join(" "), filters }
             }
             "f" | "filter" => {
-                let filters: Vec<Filter> = parts.iter().skip(1).filter_map(|s| Filter::parse(s)).collect();
+                let mut filters = Vec::new();
+                let mut i = 1;
+                while i < parts.len() {
+                    if parts[i].starts_with("--") && i + 1 < parts.len() {
+                        let key = parts[i].trim_start_matches("--");
+                        let val = parts[i + 1];
+                        filters.push(Filter::new(key, val));
+                        i += 2;
+                    } else if let Some(f) = Filter::parse(parts[i]) {
+                        filters.push(f);
+                        i += 1;
+                    } else {
+                        i += 1;
+                    }
+                }
                 Command::Filter { filters }
             }
             "e" | "export" => {
@@ -109,6 +126,15 @@ impl CommandParser {
             "r" | "refresh" => Command::Refresh,
             "next" | "n" => Command::Next,
             "prev" | "p" => Command::Prev,
+            "first" => Command::First,
+            "last" => Command::Last,
+            "page" => {
+                let page_num = parts
+                    .get(1)
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .ok_or_else(|| "Usage: /page <number> (1-based)".to_string())?;
+                Command::Page { page: page_num }
+            }
             "toggle" | "sidebar" => Command::ToggleSidebar,
             "patterns" => Command::Patterns { lang: parts.get(1).map(|s| s.to_string()) },
             "ai" | "ollama" => {

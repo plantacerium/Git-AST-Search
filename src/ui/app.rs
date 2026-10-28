@@ -1,13 +1,15 @@
 use ratatui::widgets::{Block, Borders, BorderType};
 use ratatui::style::Style;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 use tui_textarea::TextArea;
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::ai::OllamaClient;
 use crate::commands::{Autocomplete, CommandExecutor, CommandParser, CommandResult};
 use crate::engine::{GitEngine, Message};
-use crate::modules::{ChatEntry, SearchResult};
+use crate::modules::{ChatEntry, Filter, SearchResult};
 use crate::navigation::modes::NavMode;
 use crate::navigation::{NavigationState, ActivePane};
 
@@ -21,7 +23,9 @@ pub struct App<'a> {
     pub textarea: TextArea<'a>,
     pub chat_history: Vec<ChatEntry>,
     pub results: Vec<SearchResult>,
+    pub active_filters: Vec<Filter>,
     pub is_searching: bool,
+    pub should_quit: bool,
     pub receiver: Option<Receiver<Message>>,
     pub nav_state: NavigationState,
     pub command_executor: CommandExecutor,
@@ -30,6 +34,8 @@ pub struct App<'a> {
     pub engine: GitEngine,
     pub ai_receiver: Option<Receiver<AiEvent>>,
     pub is_ai_processing: bool,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub scan_progress: Option<(usize, usize)>,
 }
 
 impl<'a> App<'a> {
@@ -43,32 +49,58 @@ impl<'a> App<'a> {
         );
         textarea.set_cursor_line_style(Style::default());
 
+        let command_executor = CommandExecutor::new(repo_path.clone());
+        let mut initial_history = command_executor
+            .get_session_manager()
+            .get_current()
+            .map(|s| s.entries.clone())
+            .unwrap_or_default();
+        initial_history.reverse();
+
         Self {
             textarea,
-            chat_history: Vec::new(),
+            chat_history: initial_history,
             results: Vec::new(),
+            active_filters: Vec::new(),
             is_searching: false,
+            should_quit: false,
             receiver: None,
             nav_state: NavigationState::new(),
-            command_executor: CommandExecutor::new(repo_path.clone()),
+            command_executor,
             autocomplete: Autocomplete::new(),
             status_message: None,
             engine: GitEngine::new(repo_path),
             ai_receiver: None,
             is_ai_processing: false,
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            scan_progress: None,
         }
     }
 
     pub fn start_search(&mut self, pattern_override: Option<String>) {
+        let filters = self.active_filters.clone();
+        self.start_search_with_filters(pattern_override, filters);
+    }
+
+    pub fn start_search_with_filters(&mut self, pattern_override: Option<String>, filters: Vec<Filter>) {
         let pattern = pattern_override.unwrap_or_else(|| self.textarea.lines().join("\n"));
         if pattern.trim().is_empty() { return; }
+
+        // Cancel any running search before starting a new one
+        self.cancel_flag.store(true, Ordering::Relaxed);
+        let new_cancel = Arc::new(AtomicBool::new(false));
+        self.cancel_flag = new_cancel.clone();
+        self.scan_progress = None;
 
         self.is_searching = true;
         self.results.clear();
         self.nav_state.update_results(0);
+        self.nav_state.close_overlay();
         self.nav_state.active_pane = ActivePane::Results;
         self.nav_state.history_selected_idx = 0;
-        self.chat_history.push(ChatEntry::new(pattern.clone()));
+
+        let filter_strs: Vec<String> = filters.iter().map(|f| f.to_string()).collect();
+        self.chat_history.push(ChatEntry::new(pattern.clone()).with_filters(filter_strs));
 
         let (tx, rx) = mpsc::channel();
         self.receiver = Some(rx);
@@ -76,7 +108,7 @@ impl<'a> App<'a> {
         let clean_pattern = pattern.trim().to_string();
 
         std::thread::spawn(move || {
-            GitEngine::run_search(&path, clean_pattern, tx);
+            GitEngine::run_search_with_options(&path, clean_pattern, filters, new_cancel, tx);
         });
     }
 
@@ -137,16 +169,50 @@ impl<'a> App<'a> {
                         self.results.push(res);
                         self.nav_state.update_results(self.results.len());
                     }
+                    Message::Progress { processed, total } => {
+                        self.scan_progress = Some((processed, total));
+                        let pct = (processed * 100) / total.max(1);
+                        self.status_message = Some(format!(
+                            "⟳ Scanning blobs: {}/{} ({}%) — {} matches [Esc to cancel]",
+                            processed,
+                            total,
+                            pct,
+                            self.results.len()
+                        ));
+                    }
                     Message::SearchFinished => {
                         self.is_searching = false;
+                        self.scan_progress = None;
                         let count = self.results.len();
-                        self.status_message = Some(format!("✓ Found {} results", count));
+                        let filter_note = if self.active_filters.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                " [filters: {}]",
+                                self.active_filters
+                                    .iter()
+                                    .map(|f| f.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        };
+                        let cancelled = self.cancel_flag.load(Ordering::Relaxed);
+                        if cancelled {
+                            self.status_message = Some(format!("⏹ Search cancelled ({} partial results{})", count, filter_note));
+                        } else {
+                            self.status_message = Some(format!("✓ Found {} results{}", count, filter_note));
+                        }
                         if let Some(entry) = self.chat_history.last_mut() {
-                            entry.set_results(self.results.clone());
+                            // Cap cached results per history entry to 500 to keep memory bounded
+                            let capped: Vec<SearchResult> = self.results.iter().take(500).cloned().collect();
+                            entry.set_results(capped);
+                            let saved_entry = entry.clone();
+                            self.command_executor.record_entry(saved_entry);
                         }
                     }
                     Message::Error(err) => {
                         self.is_searching = false;
+                        self.scan_progress = None;
                         self.status_message = Some(format!("✗ {}", err));
                     }
                 }
@@ -178,6 +244,85 @@ impl<'a> App<'a> {
                 AiEvent::Error(err) => {
                     self.status_message = Some(format!("✗ AI: {}", err));
                 }
+            }
+        }
+    }
+
+    pub fn open_selected_blob_preview(&mut self) {
+        if self.results.is_empty() {
+            self.status_message = Some("✗ No result selected to preview.".to_string());
+            return;
+        }
+        let idx = self.nav_state.global_selected().min(self.results.len() - 1);
+        let res = &self.results[idx];
+        match GitEngine::read_blob_at_commit(self.engine.get_repo_path(), &res.commit_id, &res.file_path) {
+            Ok(content) => {
+                let mut formatted = String::new();
+                formatted.push_str(&format!(
+                    "Commit: {} ({}) | File: {}:{}\n\n",
+                    res.commit_short,
+                    res.author.as_deref().unwrap_or("unknown"),
+                    res.file_path,
+                    res.line_number
+                ));
+                for (i, line) in content.lines().enumerate() {
+                    let line_no = i + 1;
+                    if line_no == res.line_number {
+                        formatted.push_str(&format!(">> {:4} | {}\n", line_no, line));
+                    } else {
+                        formatted.push_str(&format!("   {:4} | {}\n", line_no, line));
+                    }
+                }
+                let title = format!(" 📄 Historical Blob [{}] {}:{} ", res.commit_short, res.file_path, res.line_number);
+                self.nav_state.show_overlay(title, formatted);
+                self.nav_state.overlay_scroll = res.line_number.saturating_sub(6) as u16;
+            }
+            Err(e) => {
+                self.status_message = Some(format!("✗ Could not read historical blob: {}", e));
+            }
+        }
+    }
+
+    pub fn open_selected_in_editor(&mut self) {
+        if self.results.is_empty() {
+            self.status_message = Some("✗ No result selected to open.".to_string());
+            return;
+        }
+        let idx = self.nav_state.global_selected().min(self.results.len() - 1);
+        let res = &self.results[idx];
+        let full_path = std::path::Path::new(self.engine.get_repo_path()).join(&res.file_path);
+        if !full_path.exists() {
+            self.status_message = Some(format!(
+                "ℹ '{}' does not exist in working tree; opening historical blob preview instead.",
+                res.file_path
+            ));
+            self.open_selected_blob_preview();
+            return;
+        }
+        let path_str = full_path.to_string_lossy().to_string();
+        let line = res.line_number;
+        let editor = std::env::var("EDITOR")
+            .or_else(|_| std::env::var("VISUAL"))
+            .unwrap_or_else(|_| "code".to_string());
+
+        let spawned = if editor.contains("code") || editor.contains("cursor") {
+            std::process::Command::new(&editor)
+                .arg("-g")
+                .arg(format!("{}:{}", path_str, line))
+                .spawn()
+        } else {
+            std::process::Command::new(&editor)
+                .arg(format!("+{}", line))
+                .arg(&path_str)
+                .spawn()
+        };
+
+        match spawned {
+            Ok(_) => {
+                self.status_message = Some(format!("↗ Opened {}:{} in '{}'", res.file_path, line, editor));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("✗ Failed to launch editor '{}': {}", editor, e));
             }
         }
     }
@@ -220,7 +365,7 @@ impl<'a> App<'a> {
                 KeyCode::Char(c) => { self.nav_state.command_buffer.push(c); }
                 _ => {}
             }
-            return false;
+            return self.should_quit;
         }
 
         if self.nav_state.mode == NavMode::Help {
@@ -230,12 +375,61 @@ impl<'a> App<'a> {
             return false;
         }
 
+        // Handle scrollable command output overlay modal if active
+        if self.nav_state.overlay_content.is_some() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.nav_state.close_overlay();
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.nav_state.overlay_scroll = self.nav_state.overlay_scroll.saturating_add(1);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.nav_state.overlay_scroll = self.nav_state.overlay_scroll.saturating_sub(1);
+                }
+                KeyCode::Char('/') | KeyCode::Char(':') => {
+                    self.nav_state.enter_command_mode();
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if self.nav_state.mode == NavMode::Visual {
             match key.code {
-                KeyCode::Esc => { self.nav_state.exit_mode(); }
-                KeyCode::Char('j') | KeyCode::Down => { self.nav_state.select_next(); }
-                KeyCode::Char('k') | KeyCode::Up => { self.nav_state.select_prev(); }
-                _ => {}
+                KeyCode::Esc => {
+                    self.nav_state.pending_g = false;
+                    self.nav_state.exit_mode();
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.nav_state.pending_g = false;
+                    self.nav_state.select_next();
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.nav_state.pending_g = false;
+                    self.nav_state.select_prev();
+                }
+                KeyCode::Char('g') => {
+                    if self.nav_state.pending_g {
+                        self.nav_state.select_first();
+                        self.nav_state.pending_g = false;
+                    } else {
+                        self.nav_state.pending_g = true;
+                    }
+                }
+                KeyCode::Char('G') => {
+                    self.nav_state.pending_g = false;
+                    self.nav_state.select_last();
+                }
+                KeyCode::Char('b') => {
+                    self.nav_state.pending_g = false;
+                    let parsed = CommandParser::parse("/bookmark").unwrap();
+                    let res = self.command_executor.execute(parsed, &self.results, self.nav_state.global_selected());
+                    self.apply_command_result(res);
+                }
+                _ => {
+                    self.nav_state.pending_g = false;
+                }
             }
             return false;
         }
@@ -250,14 +444,29 @@ impl<'a> App<'a> {
         }
 
         // Normal mode
+        if key.code != KeyCode::Char('g') {
+            self.nav_state.pending_g = false;
+        }
+
         match key.code {
             KeyCode::Esc => {
-                if self.nav_state.active_pane == ActivePane::History {
+                if self.is_searching {
+                    self.cancel_flag.store(true, Ordering::Relaxed);
+                    self.is_searching = false;
+                    self.scan_progress = None;
+                    self.status_message = Some("⏹ Search cancelled by user (Esc)".to_string());
+                } else if self.nav_state.active_pane == ActivePane::History {
                     self.nav_state.active_pane = ActivePane::Results;
                     self.status_message = Some("Focused Results Grid".to_string());
                 } else {
                     return true;
                 }
+            }
+            KeyCode::Char('d') | KeyCode::Char(' ') if self.nav_state.active_pane == ActivePane::Results => {
+                self.open_selected_blob_preview();
+            }
+            KeyCode::Char('o') if self.nav_state.active_pane == ActivePane::Results => {
+                self.open_selected_in_editor();
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 self.nav_state.toggle_pane();
@@ -265,7 +474,7 @@ impl<'a> App<'a> {
                     self.preview_selected_history();
                     self.status_message = Some("Focused 📜 History (j/k: navigate, Enter/r: re-run, e: edit, Tab: back)".to_string());
                 } else {
-                    self.status_message = Some("Focused Results Grid (j/k: select, h/l: pages)".to_string());
+                    self.status_message = Some("Focused Results Grid (j/k: select, h/l: pages, gg/G: first/last)".to_string());
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
@@ -304,6 +513,19 @@ impl<'a> App<'a> {
                     self.nav_state.select_prev();
                 }
             }
+            KeyCode::Char('g') => {
+                if self.nav_state.pending_g {
+                    self.nav_state.select_first();
+                    self.nav_state.pending_g = false;
+                    self.status_message = Some("Jumped to first result (gg)".to_string());
+                } else {
+                    self.nav_state.pending_g = true;
+                }
+            }
+            KeyCode::Char('G') => {
+                self.nav_state.select_last();
+                self.status_message = Some("Jumped to last result (G)".to_string());
+            }
             KeyCode::Enter => {
                 if self.nav_state.active_pane == ActivePane::History {
                     self.replay_selected_history();
@@ -330,23 +552,82 @@ impl<'a> App<'a> {
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.nav_state.toggle_sidebar(); }
             _ => {}
         }
-        false
+        self.should_quit
     }
 
     pub fn apply_command_result(&mut self, result: CommandResult) {
         match result {
-            CommandResult::Search(pattern) => { self.start_search(Some(pattern)); }
-            CommandResult::Quit => {} // handled by caller
+            CommandResult::Search { pattern, filters } => {
+                self.active_filters = filters.clone();
+                self.start_search_with_filters(Some(pattern), filters);
+            }
+            CommandResult::ApplyFilters(filters) => {
+                let display = filters.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ");
+                self.active_filters = filters.clone();
+                if !self.results.is_empty() {
+                    self.results.retain(|r| r.matches_filters(&filters));
+                    self.nav_state.update_results(self.results.len());
+                }
+                self.status_message = Some(format!("✓ Filters active ({}): {} results shown", display, self.results.len()));
+            }
+            CommandResult::ShowOverlay { title, content } => {
+                self.nav_state.show_overlay(title, content);
+            }
+            CommandResult::Quit => {
+                self.should_quit = true;
+            }
             CommandResult::Redraw => {}
             CommandResult::Clear => {
                 self.results.clear();
                 self.chat_history.clear();
+                self.active_filters.clear();
+                self.nav_state.close_overlay();
                 self.nav_state.update_results(0);
-                self.status_message = Some("Cleared.".to_string());
+                self.status_message = Some("Cleared results, history, and filters.".to_string());
             }
             CommandResult::ToggleSidebar => { self.nav_state.toggle_sidebar(); }
             CommandResult::NextPage => { self.nav_state.next_page(); }
             CommandResult::PrevPage => { self.nav_state.prev_page(); }
+            CommandResult::FirstResult => {
+                self.nav_state.select_first();
+                self.status_message = Some("→ First result".to_string());
+            }
+            CommandResult::LastResult => {
+                self.nav_state.select_last();
+                self.status_message = Some("→ Last result".to_string());
+            }
+            CommandResult::GotoPage(page) => {
+                if self.nav_state.goto_page(page) {
+                    self.status_message = Some(format!("→ Page {}/{}", page, self.nav_state.total_pages()));
+                } else {
+                    self.status_message = Some(format!("✗ Page {} out of range (1..={})", page, self.nav_state.total_pages()));
+                }
+            }
+            CommandResult::GotoTarget { commit, file, line } => {
+                let found_idx = self.results.iter().position(|r| {
+                    let c_ok = commit.as_ref().map(|c| r.commit_id.starts_with(c)).unwrap_or(true);
+                    let f_ok = file.as_ref().map(|f| r.file_path.contains(f)).unwrap_or(true);
+                    let l_ok = line.map(|l| r.line_number == l).unwrap_or(true);
+                    c_ok && f_ok && l_ok
+                });
+                if let Some(idx) = found_idx {
+                    let per_page = self.nav_state.results_per_page;
+                    self.nav_state.page = idx / per_page;
+                    self.nav_state.selected_idx = idx % per_page;
+                    let r = &self.results[idx];
+                    self.status_message = Some(format!("→ Jumped to [{}] {}:{}", r.commit_short, r.file_path, r.line_number));
+                } else {
+                    self.status_message = Some("✗ No matching result found for /goto target".to_string());
+                }
+            }
+            CommandResult::SessionLoaded { name, entries } => {
+                let mut chronological = entries;
+                chronological.reverse();
+                self.chat_history = chronological;
+                self.nav_state.history_selected_idx = 0;
+                self.preview_selected_history();
+                self.status_message = Some(format!("📂 Loaded session '{}' ({} queries)", name, self.chat_history.len()));
+            }
             CommandResult::ExportDone(msg) | CommandResult::Success(Some(msg)) => {
                 self.status_message = Some(msg);
             }

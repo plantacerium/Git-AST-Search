@@ -16,6 +16,8 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
 
     if app.nav_state.mode == NavMode::Help {
         help_overlay::render_help(f, main_area[1]);
+    } else if let Some((title, content)) = &app.nav_state.overlay_content {
+        help_overlay::render_custom_overlay(f, main_area[1], title, content, app.nav_state.overlay_scroll);
     } else if app.results.is_empty() && !app.is_searching {
         help_overlay::render_welcome(f, main_area[1], app);
     } else {

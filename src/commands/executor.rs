@@ -5,7 +5,7 @@ use crate::languages::patterns::all_builtin_patterns;
 use crate::modules::{AppConfig, Bookmark, BookmarkManager, ChatEntry, SearchResult, SessionManager};
 use std::path::Path;
 
-use super::commands::{export_csv, export_json, execute_search_command};
+use super::commands::{export_csv, export_json, export_sarif, execute_search_command};
 
 pub struct CommandExecutor {
     repo_path: String,
@@ -19,14 +19,21 @@ pub struct CommandExecutor {
 #[derive(Debug, Clone)]
 pub enum CommandResult {
     Success(Option<String>),
+    ShowOverlay { title: String, content: String },
     Error(String),
-    Search(String),
+    Search { pattern: String, filters: Vec<crate::modules::Filter> },
+    ApplyFilters(Vec<crate::modules::Filter>),
     Quit,
     Redraw,
     Clear,
     ToggleSidebar,
     NextPage,
     PrevPage,
+    FirstResult,
+    LastResult,
+    GotoPage(usize),
+    GotoTarget { commit: Option<String>, file: Option<String>, line: Option<usize> },
+    SessionLoaded { name: String, entries: Vec<ChatEntry> },
     ExportDone(String),
     AiQuery(String),
     AiReport(Option<String>),
@@ -50,6 +57,13 @@ impl CommandExecutor {
         self.repo_path = repo_path;
     }
 
+    pub fn record_entry(&mut self, entry: ChatEntry) {
+        if let Some(session) = self.session_manager.get_mut_current() {
+            session.add_entry(entry);
+        }
+        self.session_manager.save_current();
+    }
+
     pub fn execute(&mut self, parsed: ParsedCommand, results: &[SearchResult], selected_idx: usize) -> CommandResult {
         // raw_input is stored for audit/logging purposes
         let raw = parsed.raw_input;
@@ -58,24 +72,16 @@ impl CommandExecutor {
                 if pattern.is_empty() {
                     return CommandResult::Error("Pattern cannot be empty".to_string());
                 }
-                let msg = execute_search_command(&pattern, filters.clone());
-                let entry = ChatEntry::new(raw.clone())
-                    .with_results(0)
-                    .with_filters(filters.iter().map(|f| f.to_string()).collect());
-                if let Some(session) = self.session_manager.get_mut_current() {
-                    session.add_entry(entry);
-                }
-                self.session_manager.save_current();
+                let _ = execute_search_command(&pattern, filters.clone());
+                let _ = raw;
                 self.config.save();
-                let _ = msg; // search description logged
-                CommandResult::Search(pattern)
+                CommandResult::Search { pattern, filters }
             }
             Command::Filter { filters } => {
-                let display = filters.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ");
                 if filters.is_empty() {
-                    CommandResult::Error("Usage: /filter lang:rust or /filter author:name".to_string())
+                    CommandResult::Error("Usage: /filter lang:rust author:name after:2025-01-01".to_string())
                 } else {
-                    CommandResult::Success(Some(format!("Filters applied: {}", display)))
+                    CommandResult::ApplyFilters(filters)
                 }
             }
             Command::Export { format, path } => {
@@ -93,21 +99,33 @@ impl CommandExecutor {
                         }
                     }
                     "csv" => {
-                        let headers = &["commit", "file", "line", "lang", "content"];
+                        let headers = &["commit", "author", "file", "line", "lang", "content"];
                         let rows: Vec<Vec<String>> = results.iter().map(|r| {
-                            vec![r.commit_short.clone(), r.file_path.clone(), r.line_number.to_string(), r.lang.clone(), r.matched_text.clone()]
+                            vec![
+                                r.commit_short.clone(),
+                                r.author.clone().unwrap_or_default(),
+                                r.file_path.clone(),
+                                r.line_number.to_string(),
+                                r.lang.clone(),
+                                r.matched_text.clone(),
+                            ]
                         }).collect();
                         match export_csv(export_path, headers, &rows) {
                             Ok(msg) => CommandResult::ExportDone(msg),
                             Err(e) => CommandResult::Error(e),
                         }
                     }
-                    _ => CommandResult::Error(format!("Unknown format: {}. Use json or csv.", format)),
+                    "sarif" => {
+                        match export_sarif(export_path, "ast-query", results) {
+                            Ok(msg) => CommandResult::ExportDone(msg),
+                            Err(e) => CommandResult::Error(e),
+                        }
+                    }
+                    _ => CommandResult::Error(format!("Unknown format: {}. Use json, csv, or sarif.", format)),
                 }
             }
             Command::Goto { commit, file, line } => {
-                let target = format!("{}{}{}", commit.as_deref().unwrap_or(""), file.as_ref().map(|f| format!(":{}", f)).unwrap_or_default(), line.map(|l| format!(":{}", l)).unwrap_or_default());
-                CommandResult::Success(Some(format!("→ {}", target)))
+                CommandResult::GotoTarget { commit, file, line }
             }
             Command::Bookmark { label, note } => {
                 if results.is_empty() {
@@ -134,18 +152,37 @@ impl CommandExecutor {
                     CommandResult::Success(Some("No bookmarks saved.".to_string()))
                 } else {
                     let list: Vec<String> = self.bookmark_manager.list().iter().map(|b| format!("  {}", b.display())).collect();
-                    CommandResult::Success(Some(format!("★ Bookmarks ({}):\n{}", self.bookmark_manager.len(), list.join("\n"))))
+                    CommandResult::ShowOverlay {
+                        title: format!(" ★ Bookmarks ({}) ", self.bookmark_manager.len()),
+                        content: list.join("\n"),
+                    }
                 }
             }
             Command::Save { name } => {
                 let name = name.unwrap_or_else(|| format!("session_{}", chrono::Local::now().format("%Y%m%d_%H%M")));
+                let current_entries = self
+                    .session_manager
+                    .get_mut_current()
+                    .map(|s| s.entries.clone())
+                    .unwrap_or_default();
                 let _ = self.session_manager.create_session(name.clone());
+                if let Some(new_sess) = self.session_manager.get_mut_current() {
+                    new_sess.entries = current_entries;
+                }
+                self.session_manager.save_current();
                 self.config.save();
                 CommandResult::Success(Some(format!("💾 Session saved: {}", name)))
             }
             Command::Load { name } => {
                 if let Some(name) = name {
-                    CommandResult::Success(Some(format!("📂 Loaded: {}", name)))
+                    if let Some(session) = self.session_manager.load_session_by_name(&name) {
+                        CommandResult::SessionLoaded {
+                            name: session.name.clone(),
+                            entries: session.entries.clone(),
+                        }
+                    } else {
+                        CommandResult::Error(format!("Session not found: '{}'. Use /sessions to list.", name))
+                    }
                 } else {
                     CommandResult::Error("Usage: /load <session_name>".to_string())
                 }
@@ -155,32 +192,34 @@ impl CommandExecutor {
                 if sessions.is_empty() {
                     CommandResult::Success(Some("No saved sessions.".to_string()))
                 } else {
-                    let list = sessions.iter().map(|s| format!("  {} — {} entries ({})", s.name, s.entries.len(), s.updated_at.format("%Y-%m-%d %H:%M"))).collect::<Vec<_>>().join("\n");
-                    CommandResult::Success(Some(format!("📋 Sessions:\n{}", list)))
+                    let list = sessions.iter().map(|s| format!("  • {} (id: {}) — {} queries ({})", s.name, s.id, s.entries.len(), s.updated_at.format("%Y-%m-%d %H:%M"))).collect::<Vec<_>>().join("\n");
+                    CommandResult::ShowOverlay {
+                        title: " 📋 Saved Sessions ".to_string(),
+                        content: list,
+                    }
                 }
             }
             Command::Patterns { lang } => {
-                let mut output = String::from("🔍 Built-in Patterns:\n");
-                // Show builtin static patterns
+                let mut output = String::from("🔍 Built-in AST Patterns:\n\n");
                 for (name, pats) in all_builtin_patterns() {
                     if let Some(ref lf) = lang {
                         if !name.to_lowercase().contains(&lf.to_lowercase()) { continue; }
                     }
                     output.push_str(&format!("  {}:\n", name));
                     for p in pats.iter() {
-                        output.push_str(&format!("    [{}] {} — {}\n", p.name, p.pattern, p.description));
+                        output.push_str(&format!("    • [{}] {} — {}\n", p.name, p.pattern, p.description));
                     }
+                    output.push('\n');
                 }
-                // Show dynamic patterns with severity via get_patterns_for_lang
                 let langs_to_show: Vec<Language> = if let Some(ref lf) = lang {
                     self.lang_registry.enabled_languages().iter()
-                        .filter(|l| l.name().to_lowercase().contains(&lf.to_lowercase()))
+                        .filter(|l| l.matches_filter(lf))
                         .copied().collect()
                 } else {
                     self.lang_registry.enabled_languages().to_vec()
                 };
                 if !langs_to_show.is_empty() {
-                    output.push_str("\n  Detailed patterns:\n");
+                    output.push_str("  Detailed Language Rules:\n");
                     for l in &langs_to_show {
                         if self.lang_registry.is_enabled(*l) {
                             let pats = get_patterns_for_lang(*l);
@@ -193,18 +232,27 @@ impl CommandExecutor {
                         }
                     }
                 }
-                CommandResult::Success(Some(output))
+                CommandResult::ShowOverlay {
+                    title: " 🔍 Built-in AST Pattern Catalog ".to_string(),
+                    content: output,
+                }
             }
             Command::Help { topic } => {
                 if let Some(ref t) = topic {
                     if let Some(cmd) = self.registry.get(t) {
                         let aliases = if cmd.aliases.is_empty() { String::new() } else { format!(" (aliases: {})", cmd.aliases.join(", ")) };
-                        CommandResult::Success(Some(format!("/{}{}\n  {}", cmd.name, aliases, cmd.description)))
+                        CommandResult::ShowOverlay {
+                            title: format!(" 📖 Help: /{} ", cmd.name),
+                            content: format!("/{}{}\n\nDescription:\n  {}", cmd.name, aliases, cmd.description),
+                        }
                     } else {
                         CommandResult::Error(format!("Unknown command: {}. Try /help", t))
                     }
                 } else {
-                    CommandResult::Success(Some(format!("📖 Commands:\n{}\n\n⌨ Keys: j/k (select), h/l (pages), / (cmd), ? (help)", self.registry.help_text())))
+                    CommandResult::ShowOverlay {
+                        title: " 📖 Commands & Shortcuts ".to_string(),
+                        content: format!("📖 Commands:\n{}\n\n⌨ Keys: j/k (select), h/l (pages), gg/G (first/last), d/Space (blob preview), o (open editor), Tab (History), Esc (cancel search), / (cmd), ? (help)", self.registry.help_text()),
+                    }
                 }
             }
             Command::Quit => CommandResult::Quit,
@@ -212,6 +260,9 @@ impl CommandExecutor {
             Command::Refresh => CommandResult::Redraw,
             Command::Next => CommandResult::NextPage,
             Command::Prev => CommandResult::PrevPage,
+            Command::First => CommandResult::FirstResult,
+            Command::Last => CommandResult::LastResult,
+            Command::Page { page } => CommandResult::GotoPage(page),
             Command::ToggleSidebar => CommandResult::ToggleSidebar,
             Command::AiQuery { prompt } => CommandResult::AiQuery(prompt),
             Command::AiReport { topic } => CommandResult::AiReport(topic),
@@ -220,14 +271,14 @@ impl CommandExecutor {
                 match crate::engine::RefactorEngine::execute(&self.repo_path, &pattern, &rewrite, dry_run, None) {
                     Ok(res) => {
                         let mode_str = if dry_run { "[DRY RUN PREVIEW - No files modified]" } else { "[APPLIED TO DISK]" };
-                        let mut msg = format!("🛠 {} Matches: {} across {} files\n", mode_str, res.total_matches, res.files_affected);
-                        for (idx, d) in res.diffs.iter().take(5).enumerate() {
-                            msg.push_str(&format!("{}. {}:{}\n  - {}\n  + {}\n", idx + 1, d.file_path, d.line_number, d.original, d.replacement));
+                        let mut msg = format!("🛠 {}\nPattern: {}\nRewrite: {}\nMatches: {} across {} files\n\n", mode_str, res.pattern, res.rewrite, res.total_matches, res.files_affected);
+                        for (idx, d) in res.diffs.iter().enumerate() {
+                            msg.push_str(&format!("{}. {}:{}\n  - {}\n  + {}\n\n", idx + 1, d.file_path, d.line_number, d.original, d.replacement));
                         }
-                        if res.diffs.len() > 5 {
-                            msg.push_str(&format!("... and {} more diffs.", res.diffs.len() - 5));
+                        CommandResult::ShowOverlay {
+                            title: format!(" 🛠 AST Refactor ({} matches) ", res.total_matches),
+                            content: msg,
                         }
-                        CommandResult::Success(Some(msg))
                     }
                     Err(e) => CommandResult::Error(format!("Refactor failed: {}", e)),
                 }
@@ -235,14 +286,25 @@ impl CommandExecutor {
             Command::Evolution { pattern } => {
                 match crate::engine::EvolutionEngine::trace(&self.repo_path, &pattern, None) {
                     Ok(timeline) => {
-                        let mut msg = format!("🏺 Evolution Timeline for '{}' ({} events across {} commits):\n", pattern, timeline.total_occurrences, timeline.total_commits_analyzed);
-                        for (idx, h) in timeline.history.iter().take(6).enumerate() {
-                            msg.push_str(&format!("{}. [{}] {} by {} on {}: {}:{}\n", idx + 1, h.action, h.commit_short, h.author, h.date, h.file_path, h.line_number));
+                        let mut msg = format!("🏺 Semantic AST Blame for '{}' ({} events across {} commits):\n\n", pattern, timeline.total_occurrences, timeline.total_commits_analyzed);
+                        for (idx, h) in timeline.history.iter().enumerate() {
+                            msg.push_str(&format!("{}. [{}] {} by {} on {}\n   File: {}:{} — {}\n", idx + 1, h.action, h.commit_short, h.author, h.date, h.file_path, h.line_number, h.message));
+                            if let Some(ref prev) = h.previous_snippet {
+                                for line in prev.lines() {
+                                    msg.push_str(&format!("   - {}\n", line));
+                                }
+                                for line in h.snippet.lines() {
+                                    msg.push_str(&format!("   + {}\n", line));
+                                }
+                                msg.push('\n');
+                            } else {
+                                msg.push_str(&format!("   Code:\n     {}\n\n", h.snippet.replace('\n', "\n     ")));
+                            }
                         }
-                        if timeline.history.len() > 6 {
-                            msg.push_str(&format!("... and {} earlier milestone events.", timeline.history.len() - 6));
+                        CommandResult::ShowOverlay {
+                            title: format!(" 🏺 Evolution Timeline ({} events) ", timeline.total_occurrences),
+                            content: msg,
                         }
-                        CommandResult::Success(Some(msg))
                     }
                     Err(e) => CommandResult::Error(format!("Evolution trace failed: {}", e)),
                 }

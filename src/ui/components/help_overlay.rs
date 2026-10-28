@@ -75,9 +75,13 @@ pub fn render_help(f: &mut Frame, area: Rect) {
         )),
         Line::from("  Tab  Toggle active pane (Results ⇆ History)"),
         Line::from("  j/↓  Next item (result or history)   k/↑  Previous item"),
+        Line::from("  gg   First result                    G    Last result"),
+        Line::from("  d / Space  Preview full historical Git blob at matched line"),
+        Line::from("  o    Open matched file at line in external $EDITOR / VS Code"),
         Line::from("  Enter / r  Search / Re-run historical query"),
         Line::from("  e / i  Edit historical pattern in input box"),
         Line::from("  h/←  Previous page   l/→  Next page / Focus results"),
+        Line::from("  Esc  Cancel running search / Close overlay / Quit"),
         Line::from("  /  Command mode   v  Visual   ?  Help   Ctrl+B  Toggle sidebar"),
         Line::from(""),
         Line::from(Span::styled(
@@ -122,4 +126,46 @@ pub fn render_help(f: &mut Frame, area: Rect) {
     );
     
     f.render_widget(help, area);
+}
+
+pub fn render_custom_overlay(f: &mut Frame, area: Rect, title: &str, content: &str, scroll: u16) {
+    let mut lines: Vec<Line> = content
+        .lines()
+        .map(|l| {
+            if l.starts_with(">>") {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            } else if l.trim_start().starts_with('+') {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Green)))
+            } else if l.trim_start().starts_with('-') {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Red)))
+            } else if l.contains("[INTRODUCED]") {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+            } else if l.contains("[MUTATED]") {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            } else if l.contains("[REMOVED]") {
+                Line::from(Span::styled(l.to_string(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)))
+            } else {
+                Line::from(l.to_string())
+            }
+        })
+        .collect();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Use j/k (or ↓/↑) to scroll, Esc or q to close.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let overlay = Paragraph::new(lines)
+        .scroll((scroll, 0))
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .border_type(BorderType::Rounded)
+                .title(format!("{} [j/k scroll, Esc close] ", title)),
+        );
+
+    f.render_widget(overlay, area);
 }

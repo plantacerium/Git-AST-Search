@@ -59,6 +59,13 @@ impl SessionManager {
         manager.load_all();
         if manager.sessions.is_empty() {
             let _ = manager.create_session("default".to_string());
+        } else {
+            let most_recent_id = manager
+                .sessions
+                .values()
+                .max_by(|a, b| a.updated_at.cmp(&b.updated_at))
+                .map(|s| s.id.clone());
+            manager.current_session = most_recent_id;
         }
         manager
     }
@@ -97,6 +104,12 @@ impl SessionManager {
         self.sessions.get(&id).unwrap()
     }
 
+    pub fn get_current(&self) -> Option<&Session> {
+        self.current_session
+            .as_ref()
+            .and_then(|id| self.sessions.get(id))
+    }
+
     pub fn get_mut_current(&mut self) -> Option<&mut Session> {
         self.current_session
             .as_ref()
@@ -122,6 +135,20 @@ impl SessionManager {
         let mut sessions: Vec<_> = self.sessions.values().collect();
         sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         sessions
+    }
+
+    pub fn load_session_by_name(&mut self, name: &str) -> Option<&Session> {
+        let found_id = self
+            .sessions
+            .values()
+            .find(|s| s.name.eq_ignore_ascii_case(name) || s.id.eq_ignore_ascii_case(name))
+            .map(|s| s.id.clone());
+        if let Some(id) = found_id {
+            self.current_session = Some(id.clone());
+            self.sessions.get(&id)
+        } else {
+            None
+        }
     }
 }
 

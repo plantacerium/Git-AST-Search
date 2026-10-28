@@ -65,6 +65,28 @@ impl Language {
             _ => None,
         }
     }
+
+    /// Match a user-provided language filter (full name or short alias like js, py, ts, cpp, rs)
+    pub fn matches_filter(&self, filter: &str) -> bool {
+        let f = filter.trim().to_lowercase();
+        if self.name().to_lowercase() == f {
+            return true;
+        }
+        match self {
+            Self::Rust => matches!(f.as_str(), "rs" | "rust"),
+            Self::JavaScript => matches!(f.as_str(), "js" | "jsx" | "javascript"),
+            Self::TypeScript => matches!(f.as_str(), "ts" | "tsx" | "typescript"),
+            Self::Go => matches!(f.as_str(), "go" | "golang"),
+            Self::Python => matches!(f.as_str(), "py" | "python" | "python3"),
+            Self::Java => matches!(f.as_str(), "java"),
+            Self::C => matches!(f.as_str(), "c" | "h"),
+            Self::Cpp => matches!(f.as_str(), "cpp" | "c++" | "cc" | "cxx" | "hpp"),
+            Self::Ruby => matches!(f.as_str(), "rb" | "ruby"),
+            Self::Php => matches!(f.as_str(), "php"),
+            Self::Swift => matches!(f.as_str(), "swift"),
+            Self::Kotlin => matches!(f.as_str(), "kt" | "kotlin"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

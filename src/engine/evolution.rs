@@ -1,4 +1,5 @@
-use ast_grep_core::AstGrep;
+use ast_grep_core::{AstGrep, Pattern};
+use ast_grep_language::SupportLang;
 use git2::{Oid, Repository, Sort};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,7 +15,9 @@ pub struct EvolutionEntry {
     pub message: String,
     pub file_path: String,
     pub line_number: usize,
-    pub action: String, // "INTRODUCED", "MUTATED", "PRESENT"
+    pub action: String, // "INTRODUCED", "MUTATED", "REMOVED"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_snippet: Option<String>,
     pub snippet: String,
 }
 
@@ -45,7 +48,11 @@ impl EvolutionEngine {
         let oids: Vec<Oid> = revwalk.filter_map(|id| id.ok()).collect();
         let total_commits = oids.len();
 
-        let mut previous_state: HashMap<String, String> = HashMap::new();
+        // Cache AST matches per blob Oid so unchanged files across commits are parsed only once
+        let mut blob_cache: HashMap<Oid, Vec<(usize, String)>> = HashMap::new();
+        let mut pattern_cache: HashMap<SupportLang, Pattern> = HashMap::new();
+        let literal_prefilter = GitEngine::extract_literal_prefilter(pattern);
+        let mut previous_state: HashMap<String, Vec<(usize, String)>> = HashMap::new();
         let mut history = Vec::new();
 
         for oid in oids {
@@ -68,7 +75,7 @@ impl EvolutionEngine {
                 Err(_) => continue,
             };
 
-            let mut current_commit_matches: HashMap<String, (usize, String)> = HashMap::new();
+            let mut current_commit_matches: HashMap<String, Vec<(usize, String)>> = HashMap::new();
 
             let _ = tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
                 if let Some(name) = entry.name() {
@@ -83,7 +90,7 @@ impl EvolutionEngine {
                     };
 
                     if let Some(target_l) = lang_filter {
-                        if !lang.name().eq_ignore_ascii_case(target_l) {
+                        if !lang.matches_filter(target_l) {
                             return git2::TreeWalkResult::Ok;
                         }
                     }
@@ -93,32 +100,85 @@ impl EvolutionEngine {
                         None => return git2::TreeWalkResult::Ok,
                     };
 
-                    if let Ok(blob) = entry.to_object(&repo).and_then(|obj| obj.into_blob().map_err(|_| git2::Error::from_str("Not a blob"))) {
-                        let content = String::from_utf8_lossy(blob.content());
-                        let grep = AstGrep::new(content.as_ref(), support_lang);
-
-                        let file_path = format!("{}{}", root, name);
-                        for matched in grep.root().find_all(pattern) {
-                            let range = matched.range();
-                            let line = content[..range.start].lines().count();
-                            let text = matched.text().to_string();
-                            current_commit_matches.insert(file_path.clone(), (line, text));
+                    let blob_id = entry.id();
+                    let matches_for_blob = if let Some(cached) = blob_cache.get(&blob_id) {
+                        cached.clone()
+                    } else if let Ok(blob) = entry
+                        .to_object(&repo)
+                        .and_then(|obj| obj.into_blob().map_err(|_| git2::Error::from_str("Not a blob")))
+                    {
+                        if blob.is_binary() || blob.size() > 2 * 1024 * 1024 {
+                            blob_cache.insert(blob_id, Vec::new());
+                            Vec::new()
+                        } else {
+                            let content = String::from_utf8_lossy(blob.content());
+                            if let Some(ref lit) = literal_prefilter {
+                                if !content.contains(lit.as_str()) {
+                                    blob_cache.insert(blob_id, Vec::new());
+                                    return git2::TreeWalkResult::Ok;
+                                }
+                            }
+                            let compiled_pat = pattern_cache
+                                .entry(support_lang)
+                                .or_insert_with(|| Pattern::new(pattern, support_lang))
+                                .clone();
+                            let grep = AstGrep::new(content.as_ref(), support_lang);
+                            let mut found = Vec::new();
+                            for matched in grep.root().find_all(&compiled_pat) {
+                                let line = matched.start_pos().line() + 1;
+                                let text = matched.text().to_string();
+                                found.push((line, text));
+                            }
+                            blob_cache.insert(blob_id, found.clone());
+                            found
                         }
+                    } else {
+                        Vec::new()
+                    };
+
+                    if !matches_for_blob.is_empty() {
+                        let file_path = format!("{}{}", root, name);
+                        current_commit_matches.insert(file_path, matches_for_blob);
                     }
                 }
                 git2::TreeWalkResult::Ok
             });
 
-            // Compare against previous state to determine action
-            for (file, (line, snippet)) in &current_commit_matches {
-                let action = match previous_state.get(file) {
-                    None => "INTRODUCED",
-                    Some(prev_snip) if prev_snip != snippet => "MUTATED",
-                    Some(_) => "PERSISTED",
+            // Detect INTRODUCED and MUTATED across files present in current commit
+            for (file, matches) in &current_commit_matches {
+                let current_snippets: Vec<&str> = matches.iter().map(|(_, s)| s.as_str()).collect();
+                let (action, prev_snip_opt) = match previous_state.get(file) {
+                    None => ("INTRODUCED", None),
+                    Some(prev_matches) => {
+                        let prev_snippets: Vec<&str> = prev_matches.iter().map(|(_, s)| s.as_str()).collect();
+                        if prev_snippets != current_snippets {
+                            let prev_combined = if prev_matches.len() == 1 {
+                                prev_matches[0].1.clone()
+                            } else {
+                                prev_matches
+                                    .iter()
+                                    .map(|(l, s)| format!("// [Line {}]\n{}", l, s))
+                                    .collect::<Vec<_>>()
+                                    .join("\n---\n")
+                            };
+                            ("MUTATED", Some(prev_combined))
+                        } else {
+                            ("PERSISTED", None)
+                        }
+                    }
                 };
 
-                // Only record meaningful state changes or key milestone events
-                if action != "PERSISTED" || history.is_empty() {
+                if action != "PERSISTED" {
+                    let (first_line, _) = &matches[0];
+                    let combined_snippet = if matches.len() == 1 {
+                        matches[0].1.clone()
+                    } else {
+                        matches
+                            .iter()
+                            .map(|(l, s)| format!("// [Line {}]\n{}", l, s))
+                            .collect::<Vec<_>>()
+                            .join("\n---\n")
+                    };
                     history.push(EvolutionEntry {
                         commit_id: oid.to_string(),
                         commit_short: commit_short.clone(),
@@ -126,14 +186,34 @@ impl EvolutionEngine {
                         date: date.clone(),
                         message: message.clone(),
                         file_path: file.clone(),
-                        line_number: *line,
+                        line_number: *first_line,
                         action: action.to_string(),
-                        snippet: snippet.clone(),
+                        previous_snippet: prev_snip_opt,
+                        snippet: combined_snippet,
                     });
                 }
-
-                previous_state.insert(file.clone(), snippet.clone());
             }
+
+            // Detect REMOVED for files that previously had the pattern but no longer match in this commit
+            for (prev_file, prev_matches) in &previous_state {
+                if !current_commit_matches.contains_key(prev_file) {
+                    let (last_line, last_snip) = &prev_matches[0];
+                    history.push(EvolutionEntry {
+                        commit_id: oid.to_string(),
+                        commit_short: commit_short.clone(),
+                        author: author.clone(),
+                        date: date.clone(),
+                        message: message.clone(),
+                        file_path: prev_file.clone(),
+                        line_number: *last_line,
+                        action: "REMOVED".to_string(),
+                        previous_snippet: Some(last_snip.clone()),
+                        snippet: last_snip.clone(),
+                    });
+                }
+            }
+
+            previous_state = current_commit_matches;
         }
 
         let total_occurrences = history.len();

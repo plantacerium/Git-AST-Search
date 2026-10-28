@@ -299,12 +299,22 @@ impl McpServer {
             .as_str()
             .ok_or_else(|| "Missing 'pattern' parameter".to_string())?;
         let repo_path = args["repo_path"].as_str().unwrap_or(&self.repo_path);
-        let lang_filter = args["lang"].as_str();
 
-        let mut results = GitEngine::search_sync(repo_path, pattern)?;
-        if let Some(l) = lang_filter {
-            results.retain(|r| r.lang.eq_ignore_ascii_case(l));
+        let mut filters = Vec::new();
+        if let Some(l) = args["lang"].as_str() {
+            filters.push(crate::modules::Filter::new("lang", l));
         }
+        if let Some(a) = args["author"].as_str() {
+            filters.push(crate::modules::Filter::new("author", a));
+        }
+        if let Some(p) = args["path"].as_str() {
+            filters.push(crate::modules::Filter::new("path", p));
+        }
+        if let Some(after) = args["after"].as_str() {
+            filters.push(crate::modules::Filter::new("after", after));
+        }
+
+        let results = GitEngine::search_sync_with_filters(repo_path, pattern, filters)?;
 
         serde_json::to_string_pretty(&results)
             .map_err(|e| format!("Failed to serialize results: {}", e))

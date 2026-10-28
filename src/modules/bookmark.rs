@@ -46,21 +46,58 @@ impl Bookmark {
 
 pub struct BookmarkManager {
     bookmarks: Vec<Bookmark>,
+    storage_path: std::path::PathBuf,
 }
 
 impl BookmarkManager {
     pub fn new() -> Self {
-        Self { bookmarks: Vec::new() }
+        let storage_path = Self::get_storage_path();
+        let mut manager = Self {
+            bookmarks: Vec::new(),
+            storage_path,
+        };
+        manager.load();
+        manager
+    }
+
+    fn get_storage_path() -> std::path::PathBuf {
+        directories::ProjectDirs::from("com", "git-ast-search", "GitASTSearch")
+            .map(|dirs| dirs.data_dir().join("bookmarks.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("./bookmarks.json"))
+    }
+
+    pub fn load(&mut self) {
+        if self.storage_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&self.storage_path) {
+                if let Ok(bms) = serde_json::from_str::<Vec<Bookmark>>(&content) {
+                    self.bookmarks = bms;
+                }
+            }
+        }
+    }
+
+    pub fn save(&self) {
+        if let Some(parent) = self.storage_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&self.bookmarks) {
+            let _ = std::fs::write(&self.storage_path, json);
+        }
     }
 
     pub fn add(&mut self, bookmark: Bookmark) {
         self.bookmarks.push(bookmark);
+        self.save();
     }
 
     pub fn remove(&mut self, id: &str) -> bool {
         let initial_len = self.bookmarks.len();
         self.bookmarks.retain(|b| b.id != id);
-        self.bookmarks.len() < initial_len
+        let removed = self.bookmarks.len() < initial_len;
+        if removed {
+            self.save();
+        }
+        removed
     }
 
     pub fn len(&self) -> usize {

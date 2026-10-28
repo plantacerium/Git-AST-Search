@@ -1,446 +1,576 @@
-# 🦀 Git AST Search TUI v0.3.0
+# 🦀 Git AST Search v0.3.0
 
-**Git AST Search** es una herramienta de terminal (TUI) de alto rendimiento diseñada para la minería de código histórica. A diferencia de las herramientas de búsqueda tradicionales basadas en texto plano o expresiones regulares (Regex), esta herramienta utiliza **Análisis de Árboles de Sintaxis Abstracta (AST)** para encontrar estructuras de código exactas, ignorando comentarios, espacios en blanco o saltos de línea, a través de *toda* la historia de un repositorio Git.
+> **Minería estructural de código a lo largo de toda la historia de Git.**
+> Una TUI para humanos, un servidor MCP para agentes de IA y una interfaz compartida para cuando ambos trabajan juntos.
 
-### ✨ Novedades en v0.3.0
-* **UI Modular de Alto Nivel**: Refactorización completa de la interfaz en componentes independientes (`sidebar`, `results_grid`, `search_bar`, `status_bar`).
-* **Lógica de Layout Atómica**: Cálculos de dimensiones desacoplados de la lógica de renderizado para mayor estabilidad y fluidez.
-* **Sistema de Comandos (Slash Commands)**: Soporte completo para comandos `/search`, `/export`, `/bookmark`, `/sessions`, `/patterns` y sus alias.
-* **Navegación tipo Vim Avanzada**: Historial de autocompletado con `Tab`, teclas `j/k/h/l` para resultados/páginas, y Modo Visual `v`.
+![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![MCP](https://img.shields.io/badge/MCP-stdio%20JSON--RPC-purple)
+![SARIF](https://img.shields.io/badge/export-SARIF%202.1.0-green)
+![Languages](https://img.shields.io/badge/lenguajes-8-informational)
 
----
+🇬🇧 [English version](./README_ENG.md)
+
+**Git AST Search** busca **estructuras de código** (no texto) en **todos los commits** de un repositorio, leyendo los blobs directamente de la base de objetos de Git con `libgit2` — sin `checkout`, sin tocar tu working tree. Usa **Árboles de Sintaxis Abstracta (AST)** con Tree-Sitter / `ast-grep`, así que ignora comentarios, espacios, saltos de línea y formateo.
 
 ![GIT AST SEARCH](./assets/GIT_AST_SEARCH_V2.JPG)
 
 ---
 
-## 🌟 ¿Por qué Git AST Search? (Propuesta de Valor Única)
+## 🧭 ¿Quién eres? Empieza aquí
 
-### 🗺️ Matriz de Capacidades y Posibilidades de un Vistazo
-
-| Capacidad / Pilar | ¿Qué hace? | Interfaz / Comando | Valor Clave para Desarrolladores e IAs |
-|---|---|---|---|
-| **⏳ Minería Histórica** | Analiza miles de commits sin realizar `git checkout` | TUI, `query`, MCP | Búsqueda profunda sin saturar disco ni tocar el working tree |
-| **⚡ Deduplicación O(1)** | Lee blobs de Git directamente en RAM (`libgit2` + `DashSet`) | Automático en el core | Reduce tiempos de búsqueda de minutos a milisegundos |
-| **🌳 Precisión AST** | Reconocimiento sintáctico exacto (`$$$`, `$VAR`) con Tree-Sitter | `/search`, `query` | Cero falsos positivos por formateo, espacios o saltos de línea |
-| **🌐 Soporte Multipolíglota** | Detección automática de lenguaje por extensión en cada commit | Auto (`.rs`, `.js`, `.py`, `.go`...) | Auditorías homogéneas en monorepos y microservicios |
-| **🏺 AST Blame Semántico** | Arqueología de bugs: rastrea cuándo un bloque mutó o se introdujo | `/evolution`, `evolution` | Revela la causa raíz de mutaciones lógicas ignorando ruido de `fmt` |
-| **🛠️ Auto-Refactor Seguro** | Reescritura estructural con política `dry-run` por defecto | `/refactor`, `refactor --apply` | Modificaciones masivas seguras con previsualización de diffs |
-| **🦙 Inteligencia Local** | Traduce lenguaje natural a AST y sintetiza reportes con Ollama | `/ai`, `/report`, `ai` | No requiere memorizar sintaxis AST; genera diagnósticos Markdown |
-| **🔌 Servidor MCP Nativo** | Expone herramientas JSON-RPC para agentes (Cursor, Claude, IDE) | `mcp [REPO]` | Permite a las IAs invocar búsquedas y auditar repositorios |
-| **🤝 Flujo Simbiótico** | Interfaz visual en TUI compartida en paralelo con el agente | TUI Vim (`j/k/h/l`) + MCP | Mental model compartido: humano e IA ven lo mismo sin cajas negras |
+| Si eres… | Lo que necesitas | Ve directo a |
+|---|---|---|
+| 👩‍💻 **Humano** (dev, auditor, reviewer) | Una TUI rápida con controles tipo Vim para explorar la historia del código | [Inicio rápido](#-inicio-rápido-60-segundos) · [Guía para Humanos](#-guía-para-humanos-la-tui) |
+| 🤖 **Agente de IA** (Claude, Cursor, Antigravity, Windsurf…) | Herramientas MCP deterministas con salida JSON estructurada | [Guía para Agentes de IA](#-guía-para-agentes-de-ia-mcp--cli) · [Referencia rápida para agentes](#-referencia-rápida-para-agentes-copiable-en-un-system-prompt) |
+| 🤝 **Humano + IA** trabajando juntos | Un modelo mental compartido: la IA busca, el humano ve y decide | [Flujos Humano ↔ IA](#-flujos-humano--ia-colaboración-simbiótica) |
+| ⚙️ **DevOps / Seguridad** | Escaneos headless e integración con GitHub Code Scanning | [CI/CD y SARIF](#-cicd-y-github-code-scanning-sarif) |
 
 ---
 
-### 1. Colaboración Simbiótica Humano ↔ IA (Shared Mental Model)
-* **El problema de las herramientas para agentes tradicionales:** Cuando un agente de IA ejecuta búsquedas en segundo plano en una herramienta invisible, el desarrollador humano pierde el contexto, la confianza y el control de lo que la IA está explorando.
-* **La solución de Git-AST-Search:** El desarrollador mantiene la **TUI abierta en su terminal** explorando visualmente con controles Vim (`j/k/h/l`), mientras que en el IDE el agente de IA formula patrones complejos, ejecuta auditorías o sugiere refactors mediante el **servidor MCP**. Ambos comparten exactamente la misma visión del código.
+## ✨ Novedades en v0.3.0
 
-### 2. Minería Histórica sin Checkout en O(1)
-El motor no realiza *checkouts* de Git ni toca el disco duro. Lee directamente de la base de datos de objetos (Blobs) mediante `libgit2`. Además, implementa una **deduplicación concurrente agresiva**: si un archivo no ha cambiado entre 1,000 commits, el motor solo lo escanea *una vez*. Esto reduce tiempos de búsqueda de minutos a milisegundos en repositorios masivos.
+**Rendimiento y escalabilidad**
+* ⚡ **Patrón compilado una sola vez** por lenguaje y por hilo (caché `Pattern` por `SupportLang`), en lugar de re-parsearlo en cada blob.
+* 🔎 **Prefiltro literal**: se extrae el literal fijo más largo del patrón (p. ej. `unwrap` en `$A.unwrap()`) y se descartan en O(N) los blobs que no lo contienen, antes de invocar Tree-Sitter.
+* ⏹ **Cancelación**: `Esc` (o lanzar una búsqueda nueva) detiene el escaneo en curso al instante.
+* 📊 **Progreso en vivo** en la barra de estado: `⟳ Scanning blobs: 1200/3400 (35%) — 18 matches [Esc to cancel]`.
+* 🧱 **Límites de memoria**: se saltan blobs binarios y de más de 2 MB; `--max-results` / `limit:N`; el historial guarda como máximo 500 resultados por consulta.
+* 🌿 **Alcance Git**: `--branch`, `--range A..B`, `--all`, `--max-commits`.
 
-### 3. Arqueología Semántica de Código (Git AST Blame)
-A diferencia de `git blame` tradicional (que atribuye cambios de autoría por meros saltos de línea o formateo de `rustfmt`/`prettier`), el **AST Blame Semántico** rastrea la evolución estructural real:
-* Identifica con precisión cuándo una función mutó de síncrona a `async`.
-* Señala exactamente qué commit y autor introdujo un bloque `unsafe` o llamada a `unwrap()`.
-
-### 4. Soporte Multipolíglota de Primera Clase
-Detecta la extensión del archivo en cada commit y asigna el parser de Tree-Sitter correspondiente en tiempo real:
-* 🦀 Rust (`.rs`)
-* 🌐 JavaScript / TypeScript (`.js`, `.jsx`, `.ts`, `.tsx`)
-* 🐹 Go (`.go`)
-* 🐍 Python (`.py`)
-* ☕ Java (`.java`)
-* ⚙️ C / C++ (`.c`, `.cpp`, `.cc`, `.cxx`)
-
-### 5. Navegación Profesional y Seguridad contra Modificaciones Accidentales
-* **Separación estricta de Lectura vs Reescritura:** Los escaneos históricos son de solo lectura. El motor de refactorización (`/refactor` o `git-ast-search refactor`) opera bajo la filosofía de **`dry-run` por defecto**, mostrando previsualizaciones de diffs antes de permitir cualquier escritura en disco (`--apply`).
+**UX y funcionalidades**
+* 📄 **Vista previa del blob histórico** (`d` / `Space`): el archivo completo *tal como era en ese commit*, numerado y centrado en la línea del match.
+* ↗ **Abrir en el editor** (`o`): `$EDITOR +línea archivo` o `code -g archivo:línea`.
+* 💾 **Historial persistente**: al arrancar, la TUI restaura las consultas de tu última sesión.
+* 🧩 **Reglas compuestas** estilo ast-grep: `pattern`, `inside`, `has`, `not`.
+* 🛡 **Exportación SARIF v2.1.0** (más CSV con escapado RFC-4180 y JSON).
+* 🏺 **Modo diff en `/evolution`**: cada evento `[MUTATED]` muestra el antes (`-`, rojo) y el después (`+`, verde).
 
 ---
 
-## 📁 Estructura del Proyecto v0.3.0
+## 🌟 Propuesta de Valor
 
-```
-Git-AST-Search/
-├── src/
-│   ├── main.rs                   # Loop principal y orquestación
-│   ├── ui/                        # Interfaz de Usuario Modular
-│   │   ├── mod.rs                # Punto de entrada de UI
-│   │   ├── app.rs                # Estado global y manejadores de App
-│   │   ├── render.rs             # Funciones de dibujo (Frame orchestration)
-│   │   ├── layout.rs             # Cálculos geométricos y constraints
-│   │   ├── events.rs             # Bridge de eventos crossterm (WIP)
-│   │   └── components/           # Widgets atómicos
-│   │       ├── mod.rs            # Export de componentes
-│   │       ├── sidebar.rs        # Panel lateral de historial
-│   │       ├── results_grid.rs   # Grilla dinámica de resultados
-│   │       ├── search_bar.rs     # Input de comandos/patrones
-│   │       ├── status_bar.rs     # Información de modo y estado
-│   │       └── help_overlay.rs   # Pantallas de ayuda y bienvenida
-│   ├── modules/                   # Modelos de datos
-│   │   ├── mod.rs
-│   │   ├── search_result.rs       # Entidad SearchResult
-│   │   ├── chat_entry.rs          # Modelo de historial de búsqueda
-│   │   ├── session.rs             # Persistencia y gestión de sesiones
-│   │   ├── bookmark.rs            # Marcadores de resultados
-│   │   ├── filter.rs              # Lógica de filtrado
-│   │   └── config.rs              # Configuración y Temas
-│   ├── commands/                  # Engine de Comandos Slash
-│   │   ├── mod.rs
-│   │   ├── parser.rs              # Parseo de comandos /
-│   │   ├── executor.rs            # Ejecutor de lógica de comandos
-│   │   ├── registry.rs            # Registro central de comandos
-│   │   ├── autocomplete.rs         # Sugerencias y autocompletado
-│   │   └── commands/              # Implementaciones individuales
-│   │       ├── mod.rs
-│   │       ├── search.rs          # Comando /search
-│   │       └── export.rs          # Comando /export
-│   ├── navigation/               # Navegación y Modos (Vim-style)
-│   │   ├── mod.rs                 # NavigationState
-│   │   └── modes.rs               # NavMode enum
-│   ├── languages/                 # Parsers y Detección Multipolíglota
-│   │   ├── mod.rs
-│   │   ├── registry.rs            # Registro de lenguajes y patrones
-│   │   ├── detector.rs            # Detección automática por extensión
-│   │   └── patterns.rs            # Definición de patrones AST base
-│   └── engine/                    # Core: Git2 + AST-Grep + Rayon
-│       └── mod.rs                 # Motor de búsqueda e integración Git
-├── assets/                        # Recursos visuales y screenshots
-├── docs/                          # Documentación detallada
-├── Cargo.toml                     # Dependencias y meta del proyecto
-├── README.md                      # Documentación en Español
-└── README_ENG.md                  # English Documentation
+### 🗺️ Matriz de capacidades de un vistazo
+
+| Pilar | ¿Qué hace? | 👩‍💻 Humano (TUI) | 🤖 Agente (MCP / CLI) | Valor clave |
+|---|---|---|---|---|
+| **⏳ Minería histórica** | Escanea todos los commits sin `git checkout` | `Enter` / `/search` | `git_ast_search` · `query` | Auditoría profunda sin tocar el disco ni el working tree |
+| **🌳 Precisión AST** | Coincidencia sintáctica con `$VAR`, `$$$` | Barra de patrón | parámetro `pattern` | Cero falsos positivos por formato, comentarios o saltos de línea |
+| **🧩 Reglas compuestas** | `inside` / `has` / `not` sobre el AST | `inside:… has:… not:…` | Regla YAML en `pattern` | Consultas contextuales ("unwrap *dentro de* un loop") |
+| **⚡ Motor optimizado** | Dedup de blobs, prefiltro literal, caché de patrones, Rayon | Automático | Automático | Repos enormes en segundos, no en minutos |
+| **🌿 Alcance Git** | Rama, rango, todas las refs, límite de commits | `branch:` `range:` `all:` `max_commits:` | `--branch` `--range` `--all` `--max-commits` | Busca exactamente en la porción de historia que importa |
+| **📄 Blob histórico** | Muestra el archivo completo en el commit del hallazgo | `d` / `Space` | `commit_id` + `file_path` en JSON | Contexto real del pasado, sin hacer checkout |
+| **↗ Búsqueda → acción** | Abre el hallazgo en tu editor | `o` | `file_path` + `line_number` | Cierra el ciclo: encontrar → arreglar |
+| **🏺 AST Blame semántico** | Cuándo se introdujo, mutó o eliminó una estructura | `/evolution` (con diff `-`/`+`) | `git_ast_evolution` · `evolution` | Causa raíz de bugs ignorando el ruido de `fmt` |
+| **🛠️ Refactor seguro** | Reescritura estructural, `dry-run` por defecto | `/refactor P -> R` | `git_ast_refactor` · `refactor` | Cambios masivos con preview obligatoria |
+| **🦙 IA local (Ollama)** | Lenguaje natural → patrón AST; informes de auditoría | `/ai`, `/report` | `ai_query_ast`, `generate_git_ast_report` | Sin memorizar sintaxis; tu código no sale de tu máquina |
+| **🛡 Exportación** | JSON, CSV (RFC-4180), SARIF 2.1.0 | `/export json\|csv\|sarif` | `--format json\|text\|sarif` | Integración con GitHub Code Scanning, hojas de cálculo y pipelines |
+| **💾 Memoria de trabajo** | Sesiones, historial persistente, marcadores | `/save`, `/load`, `/bookmark`, `Tab` | — | Retoma la investigación días después |
+| **🤝 Flujo simbiótico** | TUI y MCP sobre el mismo motor y el mismo repo | TUI abierta | MCP en el IDE | Humano e IA ven lo mismo — sin cajas negras |
+
+### ¿Por qué no basta un servidor MCP conectado a `ast-grep`?
+
+`ast-grep` es excelente para buscar en **el estado actual** de los archivos. Git AST Search resuelve otro problema:
+
+1. **La dimensión temporal.** Busca en *toda la historia* leyendo blobs de Git en memoria, deduplicando los que no cambian entre commits. Responde a "¿cuándo apareció este patrón?", "¿quién lo introdujo?", "¿existía en la rama `release/1.x`?".
+2. **Arqueología semántica.** `/evolution` reconstruye la línea de tiempo `INTRODUCED → MUTATED → REMOVED` de una estructura, con diff antes/después.
+3. **Una interfaz compartida.** El agente consulta por MCP y el humano inspecciona, valida y actúa desde la TUI: el mismo motor, los mismos resultados, el mismo repositorio.
+4. **Seguridad por diseño.** La historia es de solo lectura; la reescritura es `dry-run` salvo que se pida `--apply` / `dry_run: false` de forma explícita.
+
+---
+
+## 🚀 Inicio Rápido (60 segundos)
+
+```bash
+git clone https://github.com/plantacerium/Git-AST-Search
+cd Git-AST-Search
+cargo build --release
+
+# 1. TUI interactiva sobre el repo actual
+./target/release/git-ast-search .
+
+# 2. Búsqueda headless en JSON
+./target/release/git-ast-search query '$A.unwrap()' --lang rust --format json
+
+# 3. Servidor MCP para tu agente de IA
+./target/release/git-ast-search mcp /ruta/a/tu/repo
 ```
 
----
+En la TUI escribe `$A.unwrap()`, pulsa `Enter`, navega con `j/k`, pulsa `d` para ver el archivo en ese commit y `o` para abrirlo en tu editor.
 
-## 🚀 Stack Tecnológico
-
-| Componente | Tecnología | Descripción |
-| :--- | :--- | :--- |
-| **Interfaz (TUI)** | `ratatui` | Framework de renderizado inmediato para interfaces de terminal fluidas. |
-| **Motor AST** | `ast-grep` | Framework de búsqueda estructural super-rápido basado en `tree-sitter`. |
-| **Motor Git** | `git2` | Interacción en C puro y bajo nivel con la base de datos de objetos de Git. |
-| **Deduplicación** | `dashmap` | Estructura de datos concurrente `Lock-Free` para el registro global de Blobs. |
-| **Paralelismo** | `rayon` | Distribución dinámica de *chunks* de commits a través de todos los núcleos de CPU. |
-| **Async & Eventos** | `tokio` / `mpsc` | Canales para enviar resultados desde el motor hacia la UI sin bloquear el renderizado. |
+> [!TIP]
+> En **PowerShell** y **bash** usa **comillas simples** para los patrones: con comillas dobles, `$A` o `$$` se expanden como variables de la shell (`$$` es el PID del proceso).
 
 ---
 
 ## 📦 Instalación
 
-Para compilar este proyecto, necesitas las librerías de desarrollo del sistema operativo.
+**Requisitos:** Rust estable (edición 2021), `cmake` y un compilador de C (para `libgit2` / Tree-Sitter).
 
-**En Fedora / RHEL:**
-```bash
-sudo dnf install cmake openssl-devel libgit2-devel zlib-devel
-```
+| Sistema | Dependencias |
+|---|---|
+| **Fedora / RHEL** | `sudo dnf install cmake openssl-devel libgit2-devel zlib-devel` |
+| **Ubuntu / Debian** | `sudo apt install cmake libssl-dev libgit2-dev zlib1g-dev` |
+| **macOS** | `xcode-select --install && brew install cmake` |
+| **Windows** | Visual Studio Build Tools (C++) + `cmake` (p. ej. `winget install Kitware.CMake`) |
 
-**En Ubuntu / Debian:**
 ```bash
-sudo apt install cmake libssl-dev libgit2-dev zlib1g-dev
-```
-
-**Compilación del proyecto:**
-```bash
-git clone https://github.com/plantacerium/Git-AST-Search
-cd Git-AST-Search
-cargo build --release
+cargo build --release          # binario en target/release/git-ast-search
+cargo install --path .         # opcional: instalarlo en tu PATH
+cargo test                     # ejecutar la batería de tests
 ```
 
 ---
 
-## 🛠️ Guía de Uso: Apuntar a Cualquier Repositorio
+## 🎯 Apuntar a cualquier repositorio
 
-`Git-AST-Search` es completamente portable e independiente de la carpeta donde se encuentre compilado. Puede auditar **cualquier repositorio Git en tu máquina** (local o en otra unidad de disco).
+El binario es portable: **no** necesita estar dentro del repositorio que audita.
 
-### 1. En la TUI Interactiva
-Pasa la ruta del repositorio como primer argumento posicional (por defecto usa `.`, el directorio donde abres la terminal):
+| Modo | Cómo elegir el repositorio | Ejemplo |
+|---|---|---|
+| **TUI** | Primer argumento posicional (por defecto `.`) | `git-ast-search D:\proyectos\backend` |
+| **Headless** | `--repo <RUTA>` | `git-ast-search query '$A.unwrap()' --repo ~/dev/app` |
+| **MCP** | Ruta al arrancar + `repo_path` opcional en cada llamada | `git-ast-search mcp ~/dev/app` |
 
-```bash
-# Auditar el repositorio actual en la terminal
-git-ast-search .
-
-# Auditar otro proyecto por ruta relativa o absoluta
-git-ast-search /home/user/dev/linux
-git-ast-search "D:\proyectos\backend-api"
-```
-
-### 2. En el Modo Headless (Línea de Comandos)
-Utiliza el flag opcional `--repo <RUTA>` para dirigir consultas a cualquier proyecto:
-
-```bash
-# Búsqueda estructural directa en otro repositorio
-git-ast-search query "$A.unwrap()" --repo "D:\proyectos\mi-app" --lang rust --format json
-
-# Arqueología de bugs / AST Blame en otro repositorio
-git-ast-search evolution "std::thread::spawn($$$)" --repo "D:\proyectos\mi-app" --format text
-
-# Refactorización estructural segura en otro repositorio
-git-ast-search refactor "$A.unwrap()" "$A.unwrap_or_default()" --repo "D:\proyectos\mi-app"
-```
-
-### 3. En el Servidor MCP (Para Agentes de IA en el IDE)
-Puedes iniciar el servidor MCP apuntando a un repositorio por defecto:
-```bash
-git-ast-search mcp "D:\proyectos\mi-app"
-```
-Además, en cada invocación de herramienta (`git_ast_search`, `git_ast_refactor`, `git_ast_evolution`), el agente de IA puede enviar el parámetro `"repo_path": "/otra/ruta"` para inspeccionar repositorios dinámicamente sin reiniciar el servidor.
+> [!NOTE]
+> Búsqueda, `/evolution` y la vista de blob trabajan sobre la **base de objetos de Git** (historia, solo lectura). `/refactor` y la tecla `o` trabajan sobre el **working tree** (los archivos actuales en disco).
 
 ---
 
-## 🎮 Controles de la TUI
+## 🧬 El Lenguaje de Patrones
 
-### Modo Insert (Default)
+Los patrones se escriben **como código real** del lenguaje objetivo, con metavariables:
 
-| Atajo | Acción |
-|-------|--------|
-| `Cualquiera` | Escribir patrón AST |
-| `Enter` | Iniciar búsqueda |
-| `Esc` | Volver al Modo Normal |
+| Sintaxis | Significado | Ejemplo |
+|---|---|---|
+| `$A`, `$VAR`, `$FUNC` | Exactamente **un** nodo AST (nombre en MAYÚSCULAS) | `$OBJ.unwrap()` |
+| `$$$` | **Cero o más** nodos (argumentos, sentencias…) | `println!($$$)` |
+| `$$$ARGS` | Lista variádica con nombre (reutilizable en un rewrite) | `foo($$$ARGS)` |
+| `$_` | Comodín que no se captura | `let _ = $_;` |
 
-### Modo Normal
+### Reglas compuestas (`inside`, `has`, `not`)
 
-| Atajo | Acción |
-|-------|--------|
-| `Tab` | Alternar foco entre Resultados y Panel de Historial |
-| `i` / `a` | Entrar en Modo Insert |
-| `j` / `↓` | Siguiente resultado (o siguiente consulta en Historial) |
-| `k` / `↑` | Resultado anterior (o consulta anterior en Historial) |
-| `Enter` / `r` | Re-ejecutar consulta histórica (en Historial) o Iniciar búsqueda |
-| `e` / `i` | Cargar consulta histórica al editor de texto (en Historial) |
-| `h` / `←` | Página anterior / Saltar a Historial |
-| `l` / `→` | Página siguiente / Saltar a Resultados |
-| `Esc` | Limpiar selección / Volver a Resultados / Salir |
-| `Ctrl+B` | Toggle sidebar lateral |
-| `gg` | Ir al primer resultado |
-| `G` | Ir al último resultado |
+| Restricción | Se cumple cuando… |
+|---|---|
+| `inside: P` | algún **ancestro** del match coincide con `P` |
+| `has: P` | algún **descendiente** del match coincide con `P` |
+| `not: P` | el propio match **no** coincide con `P` |
 
-### Modo Comando
+**Formato YAML** (CLI y MCP — el patrón puede ser una cadena multilínea):
 
-| Atajo | Acción |
-|-------|--------|
-| `/` | Entrar en modo comando |
-| `:` | Modo comando vim |
-| `Tab` | Autocompletar |
-| `↑` / `↓` | Historial de comandos |
-
----
-
-## 💻 Comandos Disponibles
-
-### Comandos de Búsqueda
-
-| Comando | Descripción |
-|---------|-------------|
-| `/search <patrón>` | Buscar patrón AST en el historial |
-| `/search <patrón> --lang <lenguaje>` | Filtrar por lenguaje |
-| `/search <patrón> --author <nombre>` | Filtrar por autor |
-| `/search <patrón> --after <fecha>` | Filtrar por fecha |
-
-### Comandos de Navegación
-
-| Comando | Descripción |
-|---------|-------------|
-| `/history` o `/hist` | Enfocar y activar panel de Historial interactivo |
-| `/replay [N]` o `/rerun` | Re-ejecutar consulta histórica por índice (default: última) |
-| `/goto <destino>` | Ir a commit/archivo/línea |
-| `/next` | Siguiente resultado |
-| `/prev` | Resultado anterior |
-| `/first` | Primer resultado |
-| `/last` | Último resultado |
-| `/page <n>` | Ir a página n |
-
-### Comandos de Exportación
-
-| Comando | Descripción |
-|---------|-------------|
-| `/export json <path>` | Exportar a JSON |
-| `/export csv <path>` | Exportar a CSV |
-| `/export csv --all` | Incluir todos los resultados |
-
-### 🤖 Comandos de Inteligencia Artificial (Ollama)
-
-| Comando | Descripción |
-|---------|-------------|
-| `/ai <pregunta>` | Traduce lenguaje natural a un patrón AST mediante Ollama y ejecuta la búsqueda |
-| `/report [tema]` | Genera un informe de auditoría ejecutiva en `audit_report.md` con los resultados |
-| `/refactor <P> -> <R>` | Previsualización segura de reescritura estructural (dry-run por defecto; `--apply` para escribir) |
-| `/evolution <patrón>` | Arqueología de bugs: Traza la línea cronológica y mutaciones históricas del patrón |
-
----
-
-## 🤖 Integración con AIs y Agentes (CLI & MCP Server)
-
-`Git-AST-Search` está diseñado para ser utilizado directamente por modelos de lenguaje y entornos de desarrollo (como **Antigravity, Cursor, Claude y Windsurf**):
-
-### 1. Servidor MCP (Model Context Protocol)
-Inicia el servidor estándar sobre `stdio` para que tu asistente de IA lo invoque como una herramienta (tool) nativa:
-```bash
-git-ast-search mcp .
-```
-**Tools disponibles para la IA:**
-* `git_ast_search`: Búsqueda AST estructural en el historial en milisegundos.
-* `ai_query_ast`: Traducción de consultas en lenguaje natural a patrones AST usando Ollama.
-* `generate_git_ast_report`: Diagnósticos y reportes de auditoría generados por IA.
-* `list_ast_patterns`: Consulta del catálogo de patrones clasificados por lenguaje.
-* `git_ast_refactor`: Reescritura estructural segura de código con previsualización dry-run.
-* `git_ast_evolution`: Blame semántico para auditar cuándo mutó o se introdujo un bloque de código.
-
-### 2. Modo Headless (CLI & CI/CD)
-```bash
-# Búsqueda estructural directa con salida JSON limpia
-git-ast-search query '$A.unwrap()' --lang rust --format json
-
-# Consulta en lenguaje natural vía Ollama por terminal
-git-ast-search ai "encuentra bloques catch vacíos en typescript"
-
-# Previsualización segura (dry-run) de refactorización estructural
-git-ast-search refactor '$A.unwrap()' '$A.unwrap_or_default()' --lang rust
-
-# Aplicar refactorización estructural directamente al disco
-git-ast-search refactor '$A.unwrap()' '$A.unwrap_or_default()' --apply
-
-# Arqueología de bugs: rastrear cómo evolucionó un bloque en la historia
-git-ast-search evolution 'std::thread::spawn($$$)' --format text
+```yaml
+rule:
+  pattern: $A.unwrap()
+  inside:
+    pattern: for $X in $Y { $$$ }
+  not:
+    pattern: self.$B.unwrap()
 ```
 
+**Formato en línea** (TUI): `/search $A.unwrap() lang:rust not:self.$B.unwrap()`
+
+> [!IMPORTANT]
+> En la TUI los argumentos se separan por espacios, así que los valores de `inside:` / `has:` / `not:` deben ir **sin espacios**. Para restricciones con espacios usa el formato YAML vía CLI o MCP.
+
 ---
 
-## 🔍 Ejemplos de Búsqueda Semántica Multipolíglota
+## 👩‍💻 Guía para Humanos (La TUI)
 
-> **📖 Pro Tip:** ¡Revisa nuestro renovado [Catálogo de Exploración de Código](./code_exploration.md) que contiene **260 patrones AST listos para usar** (incluyendo 88 Fundamentales y 88 para Rust Profesional) para potenciar tus auditorías!
+### Anatomía de la pantalla
 
-Aprovecha el poder de `ast-grep` usando el comodín `$$$` (cero o múltiples nodos) y variables como `$A`, `$B` (nodos específicos). Aquí tienes casos de uso reales para auditoría de código en el historial:
+```
+┌─ 📜 History ──────┐┌─ Results (página 1/4) ───────────────────────────────┐
+│ ▸ $A.unwrap()  42 ││ [7f8dde0] src/ui/app.rs:102  (Rust)  pulsarforge     │
+│   unsafe{$$$}   3 ││   let parsed = CommandParser::parse(&input)          │
+│   console.log…  0 ││ [4f19c20] src/main.rs:164   (Rust)  pulsarforge      │
+└───────────────────┘└───────────────────────────────────────────────────────┘
+┌─ AST Pattern (Enter to search) ──────────────────────────────────────────────┐
+└──────────────────────────────────────────────────────────────────────────────┘
+ NORMAL │ ⟳ Scanning blobs: 1200/3400 (35%) — 18 matches [Esc to cancel]
+```
 
-### 🦀 Rust (`.rs`)
-* **Buscar código "inseguro" (Unsafe blocks):**
-    `unsafe { $$$ }`
-* **Encontrar antiguas fugas de memoria o desempaquetados de riesgo:**
-    `$OBJ.unwrap()` o `$OBJ.expect($ANY)`
-* **Localizar errores silenciados explícitamente:**
-    `let _ = $FUNC($$$);`
+### Controles
 
-### 🌐 JavaScript / TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`)
-* **Buscar `console.log` que se escaparon a producción:**
-    `console.log($$$)`
-* **Encontrar "Callback Hell" o promesas anidadas:**
-    `$A.then(($B) => { $$$}).then(($C) => {$$$ })`
-* **Bloques `catch` vacíos (Fallos silenciosos):**
-    ```javascript
-    catch ($E) { }
-    ```
+**Modo Insert** (escribir el patrón)
 
-### 🐍 Python (`.py`)
-* **Trampas de argumentos por defecto mutables:**
-    `def $FUNC($ARG = []): $$$` o `def $FUNC($ARG = {}): $$$`
-* **Bloques de captura de errores silenciados:**
-    ```python
-    try:
-        $$$
-    except $ERR:
-        pass
-    ```
+| Tecla | Acción |
+|---|---|
+| *cualquiera* | Escribir el patrón AST |
+| `Enter` | Iniciar la búsqueda |
+| `Esc` | Volver al modo Normal |
 
-### 🐹 Go (`.go`)
-* **Identificar dónde se ignoraron errores deliberadamente:**
-    `$VAL, _ := $FUNC($$$)`
-* **Buscar goroutines anónimas que podrían estar causando fugas:**
-    ```go
-    go func() {
-        $$$
-    }()
-    ```
+**Modo Normal** (navegar)
 
-### ☕ Java (`.java`)
-* **Rastros de "Print Debugging" dejados:**
-    `System.out.println($$$);`
-* **Captura excesivamente genérica de excepciones:**
-    ```java
-    catch (Exception $E) {
-        $$$
+| Tecla | Acción |
+|---|---|
+| `j` / `↓` · `k` / `↑` | Siguiente / anterior resultado (o consulta, en el Historial) |
+| `h` / `←` · `l` / `→` | Página anterior / siguiente · saltar entre Historial y Resultados |
+| `gg` · `G` | Primer / último resultado |
+| `d` / `Space` | 📄 **Vista previa del blob histórico** en el commit del match |
+| `o` | ↗ **Abrir en el editor** en la línea exacta |
+| `Tab` | Alternar foco Resultados ⇆ Historial |
+| `Enter` / `r` | (Historial) Re-ejecutar la consulta seleccionada |
+| `e` / `i` | (Historial) Cargar la consulta en el editor |
+| `i` / `a` | Entrar en modo Insert |
+| `v` | Modo Visual (`b` para marcar el resultado) |
+| `/` o `:` | Modo Comando (`Tab` autocompleta, `↑/↓` historial de comandos) |
+| `Ctrl+B` | Mostrar / ocultar el panel lateral |
+| `?` | Ayuda |
+| `Esc` | **Cancelar la búsqueda en curso** · cerrar modal · volver a Resultados · salir |
+
+**Modales** (blob, `/evolution`, `/refactor`, `/help`…): `j/k` para desplazarse, `Esc` / `q` para cerrar.
+
+### Comandos
+
+| Categoría | Comando | Descripción |
+|---|---|---|
+| 🔍 Búsqueda | `/search <patrón> [filtros]` (`/s`) | Buscar en la historia. Texto sin `/` = búsqueda directa |
+| | `/filter <filtros>` (`/f`) | Filtrar los resultados actuales sin volver a escanear |
+| | `/patterns [lenguaje]` | Catálogo de patrones integrados |
+| 🧭 Navegación | `/next` `/prev` `/first` `/last` `/page <n>` | Moverse por los resultados |
+| | `/goto <commit> [archivo] [línea]` (`/g`) | Saltar a un resultado concreto |
+| | `/history` (`/hist`) · `/replay [N]` (`/rerun`) | Enfocar el Historial · re-ejecutar la consulta N |
+| 💾 Memoria | `/bookmark [etiqueta] [--note …]` · `/bookmarks` · `/unbookmark <id>` | Marcadores persistentes |
+| | `/save [nombre]` · `/load <nombre>` · `/sessions` | Sesiones de investigación |
+| 📤 Exportar | `/export json\|csv\|sarif [ruta]` (`/e`) | Por defecto `results.<formato>` |
+| 🏺 Historia | `/evolution <patrón>` (`/blame`) | Línea de tiempo con diff `-`/`+` en cada `[MUTATED]` |
+| 🛠 Refactor | `/refactor <P> -> <R> [--apply]` (`/rewrite`) | Preview de reescritura; `--apply` escribe en disco |
+| 🦙 IA | `/ai <pregunta>` · `/report [tema]` | Lenguaje natural → patrón · informe `audit_report.md` |
+| ⚙️ Sistema | `/help [cmd]` · `/clear` · `/toggle` · `/quit` | |
+
+### Filtros (`clave:valor` o `--clave valor`)
+
+| Filtro | Alias | Ejemplo | Efecto |
+|---|---|---|---|
+| `lang` | `language`, `l` | `lang:rs` | Lenguaje (acepta alias: `rs`, `js`, `ts`, `py`, `cpp`…) |
+| `author` | `a`, `user` | `author:alice` | Autor del commit (subcadena) |
+| `file` | `path`, `f` | `file:src/engine` | Ruta del archivo (subcadena) |
+| `commit` | `c` | `commit:7f8dde0` | Prefijo del hash |
+| `after` / `before` | `since` / `until` | `after:2025-01-01` | Rango de fechas (`AAAA-MM-DD`) |
+| `branch` | `b` | `branch:develop` | Recorrer una rama en lugar de `HEAD` |
+| `range` | — | `range:v1.0..HEAD` | Rango de commits |
+| `all` | — | `all:true` | Todas las ramas locales y remotas |
+| `max_commits` | `commits` | `max_commits:200` | Máximo de commits recorridos |
+| `limit` | `max_results` | `limit:100` | Máximo de resultados (por defecto 5000) |
+| `inside` / `has` / `not` | — | `not:self.$B.unwrap()` | Restricciones relacionales |
+
+### Persistencia
+
+Sesiones, historial y marcadores se guardan en el directorio de datos de la aplicación (`directories::ProjectDirs` → `…/GitASTSearch/sessions`). Al arrancar, la TUI carga automáticamente la sesión más reciente.
+
+---
+
+## 🤖 Guía para Agentes de IA (MCP + CLI)
+
+### Conectar el servidor MCP
+
+El servidor habla **JSON-RPC 2.0 sobre stdio** (protocolo MCP `2024-11-05`).
+
+```json
+{
+  "mcpServers": {
+    "git-ast-search": {
+      "command": "/ruta/absoluta/a/git-ast-search",
+      "args": ["mcp", "/ruta/al/repo/por/defecto"],
+      "env": { "OLLAMA_HOST": "http://localhost:11434" }
     }
-    ```
+  }
+}
+```
 
-### ⚙️ C / C++ (`.c`, `.cpp`)
-* **Funciones inseguras de manipulación de cadenas:**
-    `strcpy($DEST, $SRC)` o `sprintf($$$)`
-* **Gestión de memoria manual:**
-    `delete $PTR;` o `free($PTR);`
+Funciona con Claude Desktop / Claude Code, Cursor, Windsurf, Antigravity y cualquier cliente MCP compatible con stdio.
+
+### Herramientas MCP
+
+| Herramienta | Parámetros | Devuelve | Efectos secundarios |
+|---|---|---|---|
+| `git_ast_search` | `pattern`* · `repo_path` · `lang` · `author` · `path` · `after` | `SearchResult[]` | Ninguno (solo lectura) |
+| `git_ast_evolution` | `pattern`* · `repo_path` · `lang` | `EvolutionTimeline` | Ninguno (solo lectura) |
+| `git_ast_refactor` | `pattern`* · `rewrite`* · `dry_run` (def. `true`) · `repo_path` · `lang` | `RefactorResult` | **Escribe en disco solo si `dry_run: false`** |
+| `list_ast_patterns` | `lang` | Catálogo `{language, patterns[]}` | Ninguno |
+| `ai_query_ast` | `prompt`* | `{pattern, lang, explanation}` | Llama a Ollama local |
+| `generate_git_ast_report` | `pattern`* · `repo_path` | Informe Markdown | Llama a Ollama local |
+
+<sub>* obligatorio</sub>
+
+### Esquemas de salida
+
+```jsonc
+// SearchResult (git_ast_search, query --format json)
+{
+  "id": "…",                    // id único del resultado
+  "commit_id": "7f8dde06bb5c…", // hash completo
+  "commit_short": "7f8dde0",
+  "file_path": "src/ui/app.rs",
+  "line_number": 102,           // 1-based
+  "lang": "Rust",
+  "matched_text": "CommandParser::parse(&input)",
+  "content": "…±2 líneas de contexto…",
+  "author": "pulsarforge",
+  "timestamp": "2026-04-08T08:56:39Z"
+}
+
+// EvolutionEntry (dentro de EvolutionTimeline.history)
+{
+  "action": "MUTATED",          // INTRODUCED | MUTATED | REMOVED
+  "commit_short": "4f19c20", "author": "…", "date": "…", "message": "…",
+  "file_path": "src/main.rs", "line_number": 164,
+  "previous_snippet": "…",      // solo en MUTATED
+  "snippet": "…"
+}
+
+// RefactorResult
+{ "pattern": "…", "rewrite": "…", "dry_run": true,
+  "total_matches": 12, "files_affected": 4,
+  "diffs": [{ "file_path": "…", "line_number": 10, "original": "…", "replacement": "…" }] }
+```
+
+### Contrato del modo headless (CLI)
+
+| Comando | Opciones | Salida |
+|---|---|---|
+| `query <PATRÓN>` | `--repo` `--lang` `--branch` `--range` `--all` `--max-commits` `--max-results` `--format json\|text\|sarif` | `SearchResult[]` / texto / SARIF |
+| `evolution <PATRÓN>` (`blame`) | `--repo` `--lang` `--format json\|text` | `EvolutionTimeline` |
+| `refactor <P> <R>` (`rewrite`) | `--repo` `--lang` `--apply` | `RefactorResult` |
+| `ai <PROMPT>` | `--repo` | `{prompt, pattern, lang, explanation, results_count, results}` |
+| `mcp [REPO]` | — | Servidor JSON-RPC en stdio |
+
+* **stdout** contiene solo el resultado (JSON limpio, apto para `jq`); los mensajes de progreso van a **stderr**.
+* **Código de salida** `0` = éxito, `1` = error (patrón vacío, repo inválido, rama/rango inexistente…).
+
+### 📋 Referencia rápida para agentes (copiable en un system prompt)
+
+```text
+TOOL: git-ast-search — búsqueda estructural (AST) en TODA la historia de Git.
+- Usa git_ast_search para preguntas de "dónde / cuándo / quién" sobre estructuras de código.
+- Los patrones son código real con metavariables: $A (un nodo), $$$ (cero o más nodos).
+- Acota siempre: pasa `lang`; en CLI usa --max-results / --max-commits en repos grandes.
+- Usa git_ast_evolution para la causa raíz: INTRODUCED -> MUTATED (con previous_snippet) -> REMOVED.
+- git_ast_refactor es dry-run por defecto. Enseña los diffs al humano y pide confirmación
+  explícita ANTES de llamar con dry_run:false.
+- Cita los hallazgos como `commit_short file_path:line_number` para que el humano pueda
+  abrirlos en la TUI (/goto <commit> <archivo> <línea>, luego `d` para ver el blob).
+- Sin resultados: prueba un patrón más general ($$$ en lugar de argumentos concretos) o revisa `lang`.
+```
+
+### Buenas prácticas para agentes
+
+1. **Empieza amplio y luego acota**: `fn $F($$$)` → `fn $F($$$) -> Result<$T, $E>`.
+2. **Comprueba el catálogo** con `list_ast_patterns` antes de inventar un patrón.
+3. **Nunca escribas en disco sin consentimiento**: `dry_run: true` → mostrar diffs → confirmación → `dry_run: false`.
+4. **Los resultados son históricos**: un match en un commit antiguo puede no existir en `HEAD`. Compara `commit_id` con el estado actual antes de proponer un arreglo.
+5. **Devuelve referencias navegables** (`commit_short file:line`) en lugar de volcar todo el JSON.
 
 ---
 
-## ⚙️ Arquitectura de Sistemas (v0.3.0)
+## 🤝 Flujos Humano ↔ IA (Colaboración Simbiótica)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                          main.rs                            │
-│           (Entry point ~50 líneas, Loop de Eventos)         │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌───────────────┐      ┌───────────────┐     ┌───────────────┐
-│      ui/      │      │   commands/   │     │  navigation/  │
-│ (Componentes) │      │   (Ingest)    │     │   (FSM)       │
-├───────────────┤      ├───────────────┤     ├───────────────┤
-│ app.rs        │◄────►│ CommandParser │◄───►│ NavMode       │
-│ layout.rs     │      │ Executor      │     │ NavState      │
-│ render.rs     │      │ Autocomplete  │     │               │
-│ components/   │      └──────┬────────┘     └───────────────┘
-└───────────────┘             │
-        │                     │
-        ▼                     ▼
-┌───────────────┐      ┌───────────────┐
-│     modules/  │      │   languages/  │
-│    (Modelos)  │      │  (TreeSitter) │
-├───────────────┤      ├───────────────┤
-│ SearchResult  │      │ LanguageReg   │
-│ ChatEntry     │      │ Detector      │
-│ Session       │      │ Patterns      │
-└───────────────┘      └──────┬────────┘
-                              │
-                              ▼
-                     ┌───────────────┐
-                     │    engine/    │
-                     │ (Git + AST)   │
-                     ├───────────────┤
-                     │ RevWalk       │
-                     │ Blobs Cache   │
-                     └───────────────┘
+El humano mantiene la **TUI abierta** en una terminal; el agente usa el **servidor MCP** desde el IDE. Ambos operan sobre el mismo motor y el mismo repositorio.
+
+```mermaid
+sequenceDiagram
+    participant H as 👩‍💻 Humano (TUI)
+    participant A as 🤖 Agente (IDE)
+    participant M as git-ast-search mcp
+    participant G as Historia Git
+    H->>A: "¿Dónde manejamos mal los errores en el engine?"
+    A->>M: git_ast_search { pattern: "$A.unwrap()", lang: "rust" }
+    M->>G: revwalk + dedup de blobs + AST
+    G-->>M: matches
+    M-->>A: SearchResult[]
+    A-->>H: "42 hallazgos; los 3 críticos: 7f8dde0 src/engine/mod.rs:540…"
+    H->>H: /search $A.unwrap() lang:rust → j/k, d (blob), o (editor)
+    H->>A: "Propón un refactor para src/engine"
+    A->>M: git_ast_refactor { dry_run: true }
+    M-->>A: diffs
+    A-->>H: preview de los diffs
+    H->>A: "Aprobado"
+    A->>M: git_ast_refactor { dry_run: false }
 ```
 
-### Flujo de Datos
+### Playbooks
 
+| Escenario | 🤖 La IA… | 👩‍💻 El humano… |
+|---|---|---|
+| **Triage de seguridad** | Busca `unsafe { $$$ }`, `strcpy($$$)`, `eval($$$)` y prioriza | Revisa cada hallazgo con `d`, marca con `/bookmark`, exporta `/export sarif` |
+| **Arqueología de un bug** | Ejecuta `git_ast_evolution` y señala el commit `MUTATED` sospechoso | Abre `/evolution`, lee el diff `-`/`+`, confirma la causa raíz |
+| **Migración de API** | Encuentra los usos antiguos y genera un `git_ast_refactor` en dry-run | Valida la preview y aprueba el `--apply` |
+| **Onboarding** | Explica los patrones del catálogo y por qué importan | Explora los resultados en la TUI y guarda la sesión con `/save onboarding` |
+| **Code review** | Busca anti-patrones en `range:main..feature` | Navega los resultados y deja notas con `/bookmark --note` |
+| **IA 100 % local** | — | Usa `/ai encuentra bloques catch vacíos` (Ollama): ningún código sale de la máquina |
+
+---
+
+## 🛡 CI/CD y GitHub Code Scanning (SARIF)
+
+```yaml
+# .github/workflows/ast-audit.yml
+name: AST Audit
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions: { security-events: write, contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }          # historia completa
+      - run: cargo install --git https://github.com/plantacerium/Git-AST-Search
+      - run: git-ast-search query '$A.unwrap()' --lang rust --max-commits 50 --format sarif > ast.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: ast.sarif }
 ```
-UI Input (TextArea) → CommandParser → CommandExecutor
-                                              │
-                                              ▼
-                                     start_search()
-                                              │
-                                              ▼
-                                    mpsc::channel()
-                                              │
-                    ┌─────────────────────────┤
-                    ▼                         ▼
-             RevWalk (commits)        DashSet (blob cache)
-                    │                         │
-                    └─────────┬───────────────┘
-                              ▼
-                       par_chunks(100)
-                              │
-                              ▼
-                       AstGrep (pattern)
-                              │
-                              ▼
-                     Message::ResultFound
-                              │
-                              ▼
-                     App.results (UI update)
+
+```bash
+# Contar unwraps en los últimos 100 commits
+git-ast-search query '$A.unwrap()' --lang rs --max-commits 100 | jq length
+
+# Comparar una rama de feature con main
+git-ast-search query 'console.log($$$)' --range main..feature/login --format text
 ```
 
 ---
+
+## ⚙️ Configuración
+
+| Variable | Por defecto | Uso |
+|---|---|---|
+| `OLLAMA_HOST` | `http://localhost:11434` | Endpoint de Ollama para `/ai`, `/report` y las herramientas MCP de IA |
+| `OLLAMA_MODEL` | `qwen2.5-coder:latest` | Modelo que traduce lenguaje natural a patrones |
+| `EDITOR` / `VISUAL` | `code` | Editor que abre la tecla `o` (`code`/`cursor` usan `-g archivo:línea`; el resto, `+línea archivo`) |
+
+---
+
+## ⚡ Cómo es tan rápido
+
+```mermaid
+flowchart LR
+    A["Revwalk (HEAD / rama / rango / --all)"] --> B["Filtros de commit: autor, fecha, hash"]
+    B --> C["Tree walk: lenguaje y ruta"]
+    C --> D{"¿Blob ya visto?"}
+    D -- sí --> X["Descartar (dedup O(1))"]
+    D -- no --> E["Tareas únicas"]
+    E --> F["Rayon: un hilo por núcleo"]
+    F --> G{"¿Binario o > 2 MB?"}
+    G -- sí --> X
+    G -- no --> H{"¿Contiene el literal del patrón?"}
+    H -- no --> X
+    H -- sí --> I["AST con Pattern cacheado"]
+    I --> J["inside / has / not"]
+    J --> K["Message::ResultFound → UI / JSON"]
+```
+
+1. **Deduplicación de blobs**: un archivo que no cambia en 1.000 commits se analiza **una sola vez**.
+2. **Prefiltro literal**: la mayoría de blobs se descartan con una búsqueda de subcadena, sin parsear.
+3. **Caché de `Pattern`**: el patrón se compila una vez por lenguaje y por hilo.
+4. **Paralelismo con Rayon** sobre las tareas únicas, con un `Repository` por hilo.
+5. **Streaming**: los resultados llegan a la UI por un canal `mpsc` a medida que se encuentran.
+
+---
+
+## 🔍 Ejemplos Multilenguaje
+
+> **📖 Pro tip:** el [Catálogo de Exploración de Código](./code_exploration.md) contiene **260 patrones AST listos para usar**.
+
+| Lenguaje | Objetivo | Patrón |
+|---|---|---|
+| 🦀 Rust | Bloques `unsafe` | `unsafe { $$$ }` |
+| | Desempaquetados arriesgados | `$OBJ.unwrap()` · `$OBJ.expect($MSG)` |
+| | Errores silenciados | `let _ = $FUNC($$$);` |
+| 🌐 JS / TS | `console.log` olvidados | `console.log($$$)` |
+| | Promesas encadenadas | `$A.then($$$).then($$$)` |
+| | `catch` vacío | `catch ($E) { }` |
+| 🐍 Python | Argumentos por defecto mutables | `def $F($ARG = []): $$$` |
+| | `except` silencioso | `try:\n    $$$\nexcept $ERR:\n    pass` |
+| 🐹 Go | Errores ignorados | `$VAL, _ := $FUNC($$$)` |
+| | Goroutines anónimas | `go func() { $$$ }()` |
+| ☕ Java | Print debugging | `System.out.println($$$);` |
+| | `catch` genérico | `catch (Exception $E) { $$$ }` |
+| ⚙️ C / C++ | Cadenas inseguras | `strcpy($DEST, $SRC)` · `sprintf($$$)` |
+| | Memoria manual | `free($PTR);` · `delete $PTR;` |
+
+**Lenguajes soportados:** Rust (`.rs`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Python (`.py`), Go (`.go`), Java (`.java`), C (`.c`, `.h`), C++ (`.cpp`, `.cc`, `.cxx`).
+
+---
+
+## 🏗 Arquitectura
+
+```
+Git-AST-Search/
+├── src/
+│   ├── main.rs                 # Punto de entrada: TUI, query, ai, refactor, evolution, mcp
+│   ├── engine/                 # Núcleo: git2 + ast-grep + Rayon
+│   │   ├── mod.rs              # GitEngine: revwalk, dedup, prefiltro, reglas compuestas, blobs
+│   │   ├── evolution.rs        # EvolutionEngine: AST Blame semántico con diff
+│   │   └── refactor.rs         # RefactorEngine: reescritura con metavariables, dry-run
+│   ├── mcp/server.rs           # Servidor MCP JSON-RPC 2.0 (stdio)
+│   ├── ai/                     # Cliente Ollama y prompts del sistema
+│   ├── commands/               # Comandos slash: parser, executor, registry, autocomplete, export
+│   ├── navigation/             # Estado de navegación y modos Vim (Normal/Insert/Visual/Command)
+│   ├── languages/              # Detección por extensión, alias y catálogo de patrones
+│   ├── modules/                # Modelos: SearchResult, ChatEntry, Session, Bookmark, Filter, Config
+│   └── ui/                     # ratatui: app, layout, render y componentes
+├── docs/                       # Documentación técnica detallada
+├── code_exploration.md         # Catálogo de 260 patrones
+├── README.md · README_ENG.md
+└── Cargo.toml
+```
+
+```mermaid
+flowchart TD
+    subgraph Entradas
+        TUI["👩‍💻 TUI (ratatui)"]
+        CLI["⚙️ CLI headless"]
+        MCP["🤖 Servidor MCP"]
+    end
+    TUI --> CMD["commands/ parser + executor"]
+    CMD --> ENG
+    CLI --> ENG
+    MCP --> ENG
+    subgraph ENG["engine/"]
+        GE["GitEngine (búsqueda)"]
+        EV["EvolutionEngine (blame)"]
+        RF["RefactorEngine (rewrite)"]
+    end
+    GE --> GIT[("Base de objetos Git")]
+    EV --> GIT
+    RF --> WT[("Working tree")]
+    CMD --> AI["ai/ Ollama"]
+    MCP --> AI
+    CMD --> PER[("Sesiones · Marcadores")]
+```
+
+Más detalle: [docs/architecture.md](./docs/architecture.md) · [docs/ai_agents.md](./docs/ai_agents.md) · [docs/code_analysis.md](./docs/code_analysis.md)
+
+---
+
+## 🚧 Limitaciones Conocidas y Roadmap
+
+| Área | Estado actual | Dirección |
+|---|---|---|
+| Alcance de `/evolution` | Recorre `HEAD` y filtra por lenguaje | Soportar `--branch` / `--range` |
+| Herramientas MCP | `git_ast_search` no expone aún `branch`, `range`, `max_results` | Igualar las opciones de la CLI |
+| Entrada de la TUI | Una sola línea; las reglas YAML multilínea van por CLI / MCP | Editor multilínea para reglas |
+| Vista de blob | Numerada y con la línea resaltada | Resaltado de sintaxis (`syntect`) |
+| Lenguajes | 8 lenguajes con Tree-Sitter; Ruby, PHP, Swift y Kotlin ya se detectan pero aún no se analizan | Conectarlos al motor y ampliar a más gramáticas de `ast-grep-language` |
+
+---
+
+## ❓ FAQ
+
+**¿Modifica mi repositorio?** No. La búsqueda, `/evolution` y la vista de blob solo leen. Únicamente `/refactor --apply` (o `dry_run: false`) escribe, y solo en el working tree.
+
+**¿Mi código se envía a la nube?** No. Las funciones de IA usan **Ollama local**. Si no usas `/ai`, `/report` o las herramientas de IA, no hay ninguna llamada de red.
+
+**¿Por qué mi patrón no encuentra nada?** El patrón debe ser código sintácticamente válido en el lenguaje objetivo. Prueba con `$$$` para generalizar, revisa el filtro `lang` y, en la shell, usa comillas simples.
+
+**¿Cómo lo uso en un repo enorme?** Acota con `--max-commits`, `--range`, `--lang` y `--max-results`. En la TUI, `Esc` cancela en cualquier momento.
+
+---
+
+## 🤲 Contribuir
+
+Lee [docs/contributing.md](./docs/contributing.md). Antes de abrir un PR: `cargo fmt`, `cargo clippy` y `cargo test`.
 
 ## 📄 Licencia
 
-Este proyecto está distribuido bajo la Licencia MIT. Siéntete libre de usarlo, modificarlo y distribuirlo para empujar los límites de la minería de código estática.
+MIT — úsalo, modifícalo y distribúyelo para empujar los límites de la minería de código estructural.

@@ -69,16 +69,28 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             Style::default()
         };
 
-        let text = vec![
+        let author_str = res
+            .author
+            .as_deref()
+            .map(|a| format!(" by {}", a))
+            .unwrap_or_default();
+        let date_str = res
+            .timestamp
+            .map(|ts| format!(" ({})", ts.format("%Y-%m-%d")))
+            .unwrap_or_default();
+
+        let mut text = vec![
             Line::from(vec![
                 Span::styled(
                     "Commit: ",
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(&res.commit_short),
+                Span::styled(author_str, Style::default().fg(Color::Green)),
+                Span::styled(date_str, Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!(" [{}]", res.lang),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::Magenta),
                 ),
             ]),
             Line::from(vec![
@@ -89,8 +101,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
                 Span::raw(format!("{}:{}", res.file_path, res.line_number)),
             ]),
             Line::from("─".repeat((inner.width as usize / cols.max(1)).saturating_sub(2))),
-            Line::from(res.content.lines().next().unwrap_or("").to_string()),
         ];
+
+        for snippet_line in res.content.lines().take(6) {
+            text.push(Line::from(snippet_line.to_string()));
+        }
 
         let card = Paragraph::new(text)
             .block(

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -17,9 +17,9 @@ mod navigation;
 pub mod ui;
 
 use ai::OllamaClient;
+use commands::commands::to_sarif_json;
 use engine::{EvolutionEngine, GitEngine, RefactorEngine};
 use mcp::McpServer;
-use navigation::modes::NavMode;
 use ui::app::App;
 use ui::render::draw_ui;
 
@@ -46,7 +46,12 @@ COMMANDS:
 OPTIONS:
     --repo <PATH>        Target git repository path (default: ".")
     --lang <LANG>        Filter results by language (rust, js, ts, py, go, java, c, cpp)
-    --format <FORMAT>    Output format for headless commands: json, text (default: json)
+    --branch <NAME>      Scan a specific branch instead of HEAD
+    --range <A..B>       Scan commit range A..B
+    --all                Scan across all branches/references
+    --max-commits <N>    Limit number of commits traversed
+    --max-results <N>    Stop after collecting N matches
+    --format <FORMAT>    Output format for headless commands: json, text, sarif (default: json)
     --apply              Actually apply changes to disk for 'refactor' command (disables dry-run)
     --mcp                Start in MCP server mode
     -h, --help           Print help information
@@ -106,6 +111,11 @@ fn main() -> Result<()> {
         let mut repo_path = ".".to_string();
         let mut lang_filter = None;
         let mut format = "json".to_string();
+        let mut branch = None;
+        let mut range = None;
+        let mut all_branches = false;
+        let mut max_commits: Option<usize> = None;
+        let mut max_results: Option<usize> = None;
 
         let mut i = 3;
         while i < args.len() {
@@ -119,12 +129,47 @@ fn main() -> Result<()> {
                 "--format" => {
                     if i + 1 < args.len() { format = args[i + 1].clone(); i += 1; }
                 }
+                "--branch" => {
+                    if i + 1 < args.len() { branch = Some(args[i + 1].clone()); i += 1; }
+                }
+                "--range" => {
+                    if i + 1 < args.len() { range = Some(args[i + 1].clone()); i += 1; }
+                }
+                "--all" => {
+                    all_branches = true;
+                }
+                "--max-commits" => {
+                    if i + 1 < args.len() { max_commits = args[i + 1].parse().ok(); i += 1; }
+                }
+                "--max-results" => {
+                    if i + 1 < args.len() { max_results = args[i + 1].parse().ok(); i += 1; }
+                }
                 _ => {}
             }
             i += 1;
         }
 
-        let mut results = match GitEngine::search_sync(&repo_path, &pattern) {
+        let mut filters = Vec::new();
+        if let Some(ref l) = lang_filter {
+            filters.push(crate::modules::Filter::new("lang", l));
+        }
+        if let Some(ref b) = branch {
+            filters.push(crate::modules::Filter::new("branch", b));
+        }
+        if let Some(ref r) = range {
+            filters.push(crate::modules::Filter::new("range", r));
+        }
+        if all_branches {
+            filters.push(crate::modules::Filter::new("all", "true"));
+        }
+        if let Some(mc) = max_commits {
+            filters.push(crate::modules::Filter::new("max_commits", &mc.to_string()));
+        }
+        if let Some(mr) = max_results {
+            filters.push(crate::modules::Filter::new("max_results", &mr.to_string()));
+        }
+
+        let results = match GitEngine::search_sync_with_filters(&repo_path, &pattern, filters) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("Error executing search: {}", e);
@@ -132,16 +177,14 @@ fn main() -> Result<()> {
             }
         };
 
-        if let Some(ref l) = lang_filter {
-            results.retain(|r| r.lang.eq_ignore_ascii_case(l));
-        }
-
         if format == "text" {
             println!("Found {} results for pattern '{}':", results.len(), pattern);
             for r in results {
                 println!("[{}] {}:{} ({})\n{}", r.commit_short, r.file_path, r.line_number, r.lang, r.matched_text);
                 println!("---");
             }
+        } else if format == "sarif" {
+            println!("{}", to_sarif_json(&pattern, &results));
         } else {
             let json_out = serde_json::to_string_pretty(&results)?;
             println!("{}", json_out);
@@ -284,7 +327,17 @@ fn main() -> Result<()> {
                 println!("[{}] {} by {} on {}", h.action, h.commit_short, h.author, h.date);
                 println!("  File: {}:{}", h.file_path, h.line_number);
                 println!("  Message: {}", h.message);
-                println!("  Code:\n{}", h.snippet);
+                if let Some(ref prev) = h.previous_snippet {
+                    println!("  Diff:");
+                    for l in prev.lines() {
+                        println!("    - {}", l);
+                    }
+                    for l in h.snippet.lines() {
+                        println!("    + {}", l);
+                    }
+                } else {
+                    println!("  Code:\n{}", h.snippet);
+                }
                 println!("---");
             }
         } else {
@@ -311,10 +364,8 @@ fn main() -> Result<()> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if app.handle_key(key) { break; }
-                    // Check if command resulted in Quit
-                    if app.nav_state.mode == NavMode::Normal && matches!(key.code, KeyCode::Enter) {
-                        // Quit is handled via apply_command_result
+                    if app.handle_key(key) {
+                        break;
                     }
                 }
             }

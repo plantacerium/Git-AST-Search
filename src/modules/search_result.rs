@@ -38,6 +38,74 @@ impl SearchResult {
         }
     }
 
+    pub fn with_metadata(
+        mut self,
+        author: Option<String>,
+        timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Self {
+        self.author = author;
+        self.timestamp = timestamp;
+        self
+    }
+
+    /// Check if this result satisfies all given filters (lang, author, file/path, commit, after/since, before/until)
+    pub fn matches_filters(&self, filters: &[super::Filter]) -> bool {
+        for f in filters {
+            let key = f.field.to_lowercase();
+            let val = f.value.to_lowercase();
+            match key.as_str() {
+                "lang" | "language" | "l" => {
+                    let lang_ok = crate::languages::Language::from_extension(&val)
+                        .map(|l| l.name().eq_ignore_ascii_case(&self.lang))
+                        .unwrap_or(false)
+                        || self.lang.to_lowercase() == val
+                        || (val == "cpp" && self.lang == "C++");
+                    if !lang_ok {
+                        return false;
+                    }
+                }
+                "author" | "a" | "user" => {
+                    let author_ok = self
+                        .author
+                        .as_ref()
+                        .map(|a| a.to_lowercase().contains(&val))
+                        .unwrap_or(false);
+                    if !author_ok {
+                        return false;
+                    }
+                }
+                "file" | "path" | "f" => {
+                    if !self.file_path.to_lowercase().contains(&val) {
+                        return false;
+                    }
+                }
+                "commit" | "c" => {
+                    if !self.commit_id.to_lowercase().starts_with(&val) {
+                        return false;
+                    }
+                }
+                "after" | "since" => {
+                    if let Some(ts) = &self.timestamp {
+                        let date_str = ts.format("%Y-%m-%d").to_string();
+                        if date_str < val {
+                            return false;
+                        }
+                    }
+                }
+                "before" | "until" => {
+                    if let Some(ts) = &self.timestamp {
+                        let date_str = ts.format("%Y-%m-%d").to_string();
+                        if date_str > val {
+                            return false;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
     /// One-line summary for display in lists
     pub fn summary(&self) -> String {
         format!(

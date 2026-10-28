@@ -20,6 +20,9 @@ pub struct NavigationState {
     pub selected_idx: usize,
     pub active_pane: ActivePane,
     pub history_selected_idx: usize,
+    pub pending_g: bool,
+    pub overlay_content: Option<(String, String)>,
+    pub overlay_scroll: u16,
 }
 
 impl NavigationState {
@@ -34,6 +37,9 @@ impl NavigationState {
             selected_idx: 0,
             active_pane: ActivePane::Results,
             history_selected_idx: 0,
+            pending_g: false,
+            overlay_content: None,
+            overlay_scroll: 0,
         }
     }
 
@@ -97,6 +103,45 @@ impl NavigationState {
             self.page -= 1;
             self.selected_idx = self.current_page_count().saturating_sub(1);
         }
+    }
+
+    /// Jump to first result (gg / /first)
+    pub fn select_first(&mut self) {
+        self.page = 0;
+        self.selected_idx = 0;
+    }
+
+    /// Jump to last result (G / /last)
+    pub fn select_last(&mut self) {
+        if self.total_results == 0 {
+            self.page = 0;
+            self.selected_idx = 0;
+        } else {
+            self.page = self.total_pages().saturating_sub(1);
+            self.selected_idx = self.current_page_count().saturating_sub(1);
+        }
+    }
+
+    /// Jump to a 1-based page number (/page <n>)
+    pub fn goto_page(&mut self, page_1based: usize) -> bool {
+        let total = self.total_pages();
+        if page_1based >= 1 && page_1based <= total {
+            self.page = page_1based - 1;
+            self.selected_idx = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn show_overlay(&mut self, title: impl Into<String>, body: impl Into<String>) {
+        self.overlay_content = Some((title.into(), body.into()));
+        self.overlay_scroll = 0;
+    }
+
+    pub fn close_overlay(&mut self) {
+        self.overlay_content = None;
+        self.overlay_scroll = 0;
     }
 
     /// Absolute index of selected result in `results` vec
