@@ -18,7 +18,7 @@ pub mod ui;
 
 use ai::OllamaClient;
 use commands::commands::to_sarif_json;
-use engine::{EvolutionEngine, GitEngine, RefactorEngine};
+use engine::{EvolutionEngine, EvolutionOptions, GitEngine, RefactorEngine};
 use mcp::McpServer;
 use ui::app::App;
 use ui::render::draw_ui;
@@ -288,13 +288,16 @@ fn main() -> Result<()> {
     if args.get(1).map(|s| s.as_str()) == Some("evolution") || args.get(1).map(|s| s.as_str()) == Some("blame") {
         let pattern = args.get(2).cloned().unwrap_or_default();
         if pattern.is_empty() {
-            eprintln!("Error: Usage: git-ast-search evolution <PATTERN> [--repo <path>] [--lang <lang>] [--format json|text]");
+            eprintln!("Error: Usage: git-ast-search evolution <PATTERN> [--repo <path>] [--lang <lang>] [--branch <branch>] [--range <A..B>] [--max-commits <N>] [--format json|text]");
             std::process::exit(1);
         }
 
         let mut repo_path = ".".to_string();
         let mut lang_filter = None;
         let mut format = "json".to_string();
+        let mut branch = None;
+        let mut range = None;
+        let mut max_commits = None;
 
         let mut i = 3;
         while i < args.len() {
@@ -308,12 +311,28 @@ fn main() -> Result<()> {
                 "--format" => {
                     if i + 1 < args.len() { format = args[i + 1].clone(); i += 1; }
                 }
+                "--branch" => {
+                    if i + 1 < args.len() { branch = Some(args[i + 1].clone()); i += 1; }
+                }
+                "--range" => {
+                    if i + 1 < args.len() { range = Some(args[i + 1].clone()); i += 1; }
+                }
+                "--max-commits" => {
+                    if i + 1 < args.len() { max_commits = args[i + 1].parse().ok(); i += 1; }
+                }
                 _ => {}
             }
             i += 1;
         }
 
-        let result = match EvolutionEngine::trace(&repo_path, &pattern, lang_filter.as_deref()) {
+        let options = EvolutionOptions {
+            lang: lang_filter,
+            branch,
+            range,
+            max_commits,
+        };
+
+        let result = match EvolutionEngine::trace_with_options(&repo_path, &pattern, options) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Evolution error: {}", e);
@@ -351,7 +370,7 @@ fn main() -> Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, event::EnableBracketedPaste)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -362,18 +381,22 @@ fn main() -> Result<()> {
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if app.handle_key(key) {
                         break;
                     }
                 }
+                Event::Paste(text) => {
+                    app.handle_paste(text);
+                }
+                _ => {}
             }
         }
     }
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, event::DisableBracketedPaste)?;
     terminal.show_cursor()?;
     Ok(())
 }

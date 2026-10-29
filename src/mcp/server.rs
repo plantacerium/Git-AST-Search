@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use crate::ai::OllamaClient;
-use crate::engine::{EvolutionEngine, GitEngine, RefactorEngine};
+use crate::engine::{EvolutionEngine, EvolutionOptions, GitEngine, RefactorEngine};
 use crate::languages::patterns::all_builtin_patterns;
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +131,42 @@ impl McpServer {
                                 "lang": {
                                     "type": "string",
                                     "description": "Optional language filter (e.g. 'rust', 'javascript', 'python', 'go')"
+                                },
+                                "branch": {
+                                    "type": "string",
+                                    "description": "Optional git branch name to scan instead of HEAD"
+                                },
+                                "range": {
+                                    "type": "string",
+                                    "description": "Optional commit range A..B (e.g. 'HEAD~20..HEAD')"
+                                },
+                                "all": {
+                                    "type": "boolean",
+                                    "description": "If true, scan across all local and remote branches"
+                                },
+                                "max_results": {
+                                    "type": "integer",
+                                    "description": "Maximum number of matching results to return (limits response size)"
+                                },
+                                "max_commits": {
+                                    "type": "integer",
+                                    "description": "Maximum number of commits to traverse"
+                                },
+                                "author": {
+                                    "type": "string",
+                                    "description": "Optional commit author filter (substring match)"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Optional file path filter (substring match)"
+                                },
+                                "after": {
+                                    "type": "string",
+                                    "description": "Optional date filter: commits on or after YYYY-MM-DD"
+                                },
+                                "before": {
+                                    "type": "string",
+                                    "description": "Optional date filter: commits on or before YYYY-MM-DD"
                                 }
                             },
                             "required": ["pattern"]
@@ -228,6 +264,18 @@ impl McpServer {
                                 "lang": {
                                     "type": "string",
                                     "description": "Optional language filter"
+                                },
+                                "branch": {
+                                    "type": "string",
+                                    "description": "Optional branch name to trace instead of HEAD"
+                                },
+                                "range": {
+                                    "type": "string",
+                                    "description": "Optional commit range A..B to trace"
+                                },
+                                "max_commits": {
+                                    "type": "integer",
+                                    "description": "Maximum number of commits to trace"
                                 }
                             },
                             "required": ["pattern"]
@@ -313,6 +361,26 @@ impl McpServer {
         if let Some(after) = args["after"].as_str() {
             filters.push(crate::modules::Filter::new("after", after));
         }
+        if let Some(before) = args["before"].as_str() {
+            filters.push(crate::modules::Filter::new("before", before));
+        }
+        if let Some(br) = args["branch"].as_str() {
+            filters.push(crate::modules::Filter::new("branch", br));
+        }
+        if let Some(rng) = args["range"].as_str() {
+            filters.push(crate::modules::Filter::new("range", rng));
+        }
+        if let Some(all) = args["all"].as_bool() {
+            if all {
+                filters.push(crate::modules::Filter::new("all", "true"));
+            }
+        }
+        if let Some(mr) = args["max_results"].as_u64() {
+            filters.push(crate::modules::Filter::new("max_results", &mr.to_string()));
+        }
+        if let Some(mc) = args["max_commits"].as_u64() {
+            filters.push(crate::modules::Filter::new("max_commits", &mc.to_string()));
+        }
 
         let results = GitEngine::search_sync_with_filters(repo_path, pattern, filters)?;
 
@@ -390,10 +458,82 @@ impl McpServer {
             .as_str()
             .ok_or_else(|| "Missing 'pattern' parameter".to_string())?;
         let repo_path = args["repo_path"].as_str().unwrap_or(&self.repo_path);
-        let lang = args["lang"].as_str();
+        let lang = args["lang"].as_str().map(|s| s.to_string());
+        let branch = args["branch"].as_str().map(|s| s.to_string());
+        let range = args["range"].as_str().map(|s| s.to_string());
+        let max_commits = args["max_commits"].as_u64().map(|n| n as usize);
 
-        let result = EvolutionEngine::trace(repo_path, pattern, lang)?;
+        let options = EvolutionOptions {
+            lang,
+            branch,
+            range,
+            max_commits,
+        };
+
+        let result = EvolutionEngine::trace_with_options(repo_path, pattern, options)?;
         serde_json::to_string_pretty(&result)
             .map_err(|e| format!("Serialization error: {}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_tools_list_schema_parity() {
+        let mut server = McpServer::new(".".to_string());
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+        let resp = server.handle_request(req).expect("Response expected");
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        let tools = result["tools"].as_array().unwrap();
+
+        let search_tool = tools.iter().find(|t| t["name"] == "git_ast_search").unwrap();
+        let search_props = &search_tool["inputSchema"]["properties"];
+        assert!(search_props["branch"].is_object());
+        assert!(search_props["range"].is_object());
+        assert!(search_props["all"].is_object());
+        assert!(search_props["max_results"].is_object());
+        assert!(search_props["max_commits"].is_object());
+        assert!(search_props["author"].is_object());
+        assert!(search_props["path"].is_object());
+        assert!(search_props["after"].is_object());
+        assert!(search_props["before"].is_object());
+
+        let evo_tool = tools.iter().find(|t| t["name"] == "git_ast_evolution").unwrap();
+        let evo_props = &evo_tool["inputSchema"]["properties"];
+        assert!(evo_props["branch"].is_object());
+        assert!(evo_props["range"].is_object());
+        assert!(evo_props["max_commits"].is_object());
+    }
+
+    #[test]
+    fn test_mcp_tool_call_git_ast_search_max_results() {
+        let mut server = McpServer::new(".".to_string());
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(2)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "git_ast_search",
+                "arguments": {
+                    "pattern": "fn $F($$$)",
+                    "lang": "rust",
+                    "max_results": 2
+                }
+            })),
+        };
+        let resp = server.handle_request(req).expect("Response expected");
+        assert!(resp.error.is_none());
+        let content_arr = resp.result.unwrap()["content"].as_array().unwrap().clone();
+        let text = content_arr[0]["text"].as_str().unwrap();
+        let parsed_results: Vec<Value> = serde_json::from_str(text).unwrap();
+        assert!(parsed_results.len() <= 2);
     }
 }

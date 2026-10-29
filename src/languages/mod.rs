@@ -8,7 +8,9 @@ pub use registry::{BuiltinPattern, Language, LanguageRegistry, Severity};
 
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
     "rust", "javascript", "typescript", "go", "python", "java", "c", "cpp",
-    "ruby", "php", "swift", "kotlin",
+    "ruby", "php", "swift", "kotlin", "csharp", "dart", "bash", "html",
+    "css", "json", "yaml", "elixir", "lua", "scala", "solidity", "hcl",
+    "nix", "haskell",
 ];
 
 pub fn supported_languages_display() -> String {

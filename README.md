@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![MCP](https://img.shields.io/badge/MCP-stdio%20JSON--RPC-purple)
 ![SARIF](https://img.shields.io/badge/export-SARIF%202.1.0-green)
-![Languages](https://img.shields.io/badge/lenguajes-8-informational)
+![Languages](https://img.shields.io/badge/lenguajes-26-informational)
 
 🇬🇧 [English version](./README_ENG.md)
 
@@ -191,12 +191,16 @@ rule:
 
 ### Controles
 
-**Modo Insert** (escribir el patrón)
+**Modo Insert** (escribir el patrón o regla)
 
 | Tecla | Acción |
 |---|---|
-| *cualquiera* | Escribir el patrón AST |
-| `Enter` | Iniciar la búsqueda |
+| *cualquiera* | Escribir patrón AST o símbolos (`{ } [ ] ~ @ # \| \` con soporte completo `AltGr`) |
+| `Enter` | Iniciar búsqueda (en modo patrón estándar) o nueva línea (en editor de reglas) |
+| `Shift+Enter` / `Alt+Enter` | Insertar salto de línea para escribir reglas compuestas |
+| `Ctrl+E` | 📜 Alternar **Modo Editor de Reglas YAML** (la caja se expande para reglas con `inside/not`) |
+| `Ctrl+Enter` | Ejecutar búsqueda multilínea en el Editor de Reglas |
+| `Ctrl+V` | 📋 Pegar texto o regla desde el portapapeles del sistema operativo |
 | `Esc` | Volver al modo Normal |
 
 **Modo Normal** (navegar)
@@ -206,14 +210,18 @@ rule:
 | `j` / `↓` · `k` / `↑` | Siguiente / anterior resultado (o consulta, en el Historial) |
 | `h` / `←` · `l` / `→` | Página anterior / siguiente · saltar entre Historial y Resultados |
 | `gg` · `G` | Primer / último resultado |
-| `d` / `Space` | 📄 **Vista previa del blob histórico** en el commit del match |
+| `d` / `Space` | 📄 **Vista previa del blob histórico** con **resaltado de sintaxis (`syntect`)** y línea del match |
 | `o` | ↗ **Abrir en el editor** en la línea exacta |
+| `y` / `Ctrl+C` | 📋 **Copiar match al portapapeles** (`commit_short file:line\ncode`) |
+| `Y` | 📋 **Copiar contexto completo al portapapeles** (snippet circundante) |
+| `Ctrl+V` | 📋 Pegar texto del portapapeles en el editor de patrones |
+| `Ctrl+E` | 📜 Alternar **Modo Editor de Reglas YAML** (expande el área de input) |
 | `Tab` | Alternar foco Resultados ⇆ Historial |
-| `Enter` / `r` | (Historial) Re-ejecutar la consulta seleccionada |
+| `Enter` / `r` | (Historial) Re-ejecutar la consulta seleccionada · (Resultados) Iniciar búsqueda |
 | `e` / `i` | (Historial) Cargar la consulta en el editor |
 | `i` / `a` | Entrar en modo Insert |
 | `v` | Modo Visual (`b` para marcar el resultado) |
-| `/` o `:` | Modo Comando (`Tab` autocompleta, `↑/↓` historial de comandos) |
+| `/` o `:` | Modo Comando (`Tab` autocompleta, `↑/↓` historial de comandos, `Ctrl+V` pega) |
 | `Ctrl+B` | Mostrar / ocultar el panel lateral |
 | `?` | Ayuda |
 | `Esc` | **Cancelar la búsqueda en curso** · cerrar modal · volver a Resultados · salir |
@@ -233,7 +241,7 @@ rule:
 | 💾 Memoria | `/bookmark [etiqueta] [--note …]` · `/bookmarks` · `/unbookmark <id>` | Marcadores persistentes |
 | | `/save [nombre]` · `/load <nombre>` · `/sessions` | Sesiones de investigación |
 | 📤 Exportar | `/export json\|csv\|sarif [ruta]` (`/e`) | Por defecto `results.<formato>` |
-| 🏺 Historia | `/evolution <patrón>` (`/blame`) | Línea de tiempo con diff `-`/`+` en cada `[MUTATED]` |
+| 🏺 Historia | `/evolution <patrón> [opciones]` (`/blame`) | Línea de tiempo con diff `-`/`+` (`--branch`, `--range`, `--max-commits`) |
 | 🛠 Refactor | `/refactor <P> -> <R> [--apply]` (`/rewrite`) | Preview de reescritura; `--apply` escribe en disco |
 | 🦙 IA | `/ai <pregunta>` · `/report [tema]` | Lenguaje natural → patrón · informe `audit_report.md` |
 | ⚙️ Sistema | `/help [cmd]` · `/clear` · `/toggle` · `/quit` | |
@@ -284,8 +292,8 @@ Funciona con Claude Desktop / Claude Code, Cursor, Windsurf, Antigravity y cualq
 
 | Herramienta | Parámetros | Devuelve | Efectos secundarios |
 |---|---|---|---|
-| `git_ast_search` | `pattern`* · `repo_path` · `lang` · `author` · `path` · `after` | `SearchResult[]` | Ninguno (solo lectura) |
-| `git_ast_evolution` | `pattern`* · `repo_path` · `lang` | `EvolutionTimeline` | Ninguno (solo lectura) |
+| `git_ast_search` | `pattern`* · `repo_path` · `lang` · `branch` · `range` · `all` · `max_results` · `max_commits` · `author` · `path` · `after` · `before` | `SearchResult[]` | Ninguno (solo lectura) |
+| `git_ast_evolution` | `pattern`* · `repo_path` · `lang` · `branch` · `range` · `max_commits` | `EvolutionTimeline` | Ninguno (solo lectura) |
 | `git_ast_refactor` | `pattern`* · `rewrite`* · `dry_run` (def. `true`) · `repo_path` · `lang` | `RefactorResult` | **Escribe en disco solo si `dry_run: false`** |
 | `list_ast_patterns` | `lang` | Catálogo `{language, patterns[]}` | Ninguno |
 | `ai_query_ast` | `prompt`* | `{pattern, lang, explanation}` | Llama a Ollama local |
@@ -473,6 +481,18 @@ flowchart LR
 
 | Lenguaje | Objetivo | Patrón |
 |---|---|---|
+| 🤖 Android (Kotlin) | Desempaquetado forzado nulo | `$X!!` |
+| | Fuga de corrutinas no acotadas | `GlobalScope.launch { $$$ }` |
+| | Log de depuración residual | `Log.$M($TAG, $MSG)` |
+| 🎯 Flutter (Dart) | Re-renderizado de estado | `setState(() { $$$ })` |
+| | Prints de depuración | `debugPrint($$$)` |
+| 🍏 iOS (Swift) | Force-try inseguro | `try! $F($$$)` |
+| | Desempaquetado forzado de opcional | `$X!` |
+| 🔷 C# (.NET) | Bloque inseguro | `unsafe { $$$ }` |
+| | Bloqueo de hilo sincrónico | `Thread.Sleep($$$)` |
+| ⚡ Solidity (Web3) | Riesgo de phishing por tx.origin | `tx.origin` |
+| | Autodestrucción de contrato | `selfdestruct($$$)` |
+| 🐚 Bash / Shell | Ejecución de eval insegura | `eval $$$` |
 | 🦀 Rust | Bloques `unsafe` | `unsafe { $$$ }` |
 | | Desempaquetados arriesgados | `$OBJ.unwrap()` · `$OBJ.expect($MSG)` |
 | | Errores silenciados | `let _ = $FUNC($$$);` |
@@ -488,7 +508,14 @@ flowchart LR
 | ⚙️ C / C++ | Cadenas inseguras | `strcpy($DEST, $SRC)` · `sprintf($$$)` |
 | | Memoria manual | `free($PTR);` · `delete $PTR;` |
 
-**Lenguajes soportados:** Rust (`.rs`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Python (`.py`), Go (`.go`), Java (`.java`), C (`.c`, `.h`), C++ (`.cpp`, `.cc`, `.cxx`).
+### 🌐 26 Lenguajes Soportados Nativamente con Tree-Sitter
+
+1. **Android & Móvil:** Kotlin (`.kt`, `.kts`, alias: `android`, `kt`), Java (`.java`), Dart / Flutter (`.dart`, alias: `flutter`), Swift (`.swift`, alias: `ios`).
+2. **Sistemas & Backend:** Rust (`.rs`), Go (`.go`), C (`.c`, `.h`), C++ (`.cpp`, `.cc`, `.cxx`), C# (`.cs`, alias: `c#`, `dotnet`), Scala (`.scala`, `.sc`).
+3. **Web & Scripting:** TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`), Python (`.py`), Ruby (`.rb`), PHP (`.php`), Lua (`.lua`), Bash/Shell (`.sh`, `.bash`, `.zsh`).
+4. **Smart Contracts, Cloud & IaC:** Solidity (`.sol`, alias: `web3`, `solidity`), HCL / Terraform (`.tf`, `.hcl`, alias: `terraform`), Nix (`.nix`).
+5. **Formatos de Datos & Estilos:** HTML (`.html`, `.htm`), CSS/SCSS (`.css`, `.scss`), JSON (`.json`), YAML (`.yaml`, `.yml`).
+6. **Programación Funcional:** Elixir (`.ex`, `.exs`), Haskell (`.hs`).
 
 ---
 
@@ -506,7 +533,7 @@ Git-AST-Search/
 │   ├── ai/                     # Cliente Ollama y prompts del sistema
 │   ├── commands/               # Comandos slash: parser, executor, registry, autocomplete, export
 │   ├── navigation/             # Estado de navegación y modos Vim (Normal/Insert/Visual/Command)
-│   ├── languages/              # Detección por extensión, alias y catálogo de patrones
+│   ├── languages/              # Detección por extensión, alias y catálogo de patrones (26 lenguajes)
 │   ├── modules/                # Modelos: SearchResult, ChatEntry, Session, Bookmark, Filter, Config
 │   └── ui/                     # ratatui: app, layout, render y componentes
 ├── docs/                       # Documentación técnica detallada
@@ -547,11 +574,7 @@ Más detalle: [docs/architecture.md](./docs/architecture.md) · [docs/ai_agents.
 
 | Área | Estado actual | Dirección |
 |---|---|---|
-| Alcance de `/evolution` | Recorre `HEAD` y filtra por lenguaje | Soportar `--branch` / `--range` |
-| Herramientas MCP | `git_ast_search` no expone aún `branch`, `range`, `max_results` | Igualar las opciones de la CLI |
-| Entrada de la TUI | Una sola línea; las reglas YAML multilínea van por CLI / MCP | Editor multilínea para reglas |
-| Vista de blob | Numerada y con la línea resaltada | Resaltado de sintaxis (`syntect`) |
-| Lenguajes | 8 lenguajes con Tree-Sitter; Ruby, PHP, Swift y Kotlin ya se detectan pero aún no se analizan | Conectarlos al motor y ampliar a más gramáticas de `ast-grep-language` |
+| Lenguajes | **26 lenguajes** con análisis sintáctico Tree-Sitter nativo (incluyendo Android Kotlin, Dart, Swift, Solidity, C#) | Carga dinámica de gramáticas externas Tree-Sitter mediante plugins |
 
 ---
 

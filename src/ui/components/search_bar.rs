@@ -18,11 +18,20 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 .title(format!(" {} ", app.nav_state.command_buffer))
                 .border_style(Style::default().fg(Color::Green)),
         );
+    } else if app.is_rule_editor {
+        app.textarea.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" 📜 AST YAML Rule Editor (Enter: newline | Ctrl+Enter: search | Ctrl+E: toggle) ")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Magenta)),
+        );
+        app.textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
     } else if app.nav_state.mode == NavMode::Insert {
         app.textarea.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" ✎ AST Pattern (Insert Mode) ")
+                .title(" ✎ AST Pattern (Enter: search | Shift+Enter: newline | Ctrl+E: Rule Editor) ")
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::Cyan)),
         );

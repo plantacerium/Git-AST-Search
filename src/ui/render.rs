@@ -6,7 +6,7 @@ use crate::navigation::modes::NavMode;
 
 /// Orchestrates the different UI components and passes them the appropriate area
 pub fn draw_ui(f: &mut Frame, app: &mut App) {
-    let chunks = calculate_main_layout(f.area());
+    let chunks = calculate_main_layout(f.area(), app.is_rule_editor);
 
     let main_area = calculate_sidebar_layout(chunks[0], app.nav_state.sidebar_visible);
 
@@ -16,6 +16,9 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
 
     if app.nav_state.mode == NavMode::Help {
         help_overlay::render_help(f, main_area[1]);
+    } else if let Some(lines) = &app.nav_state.overlay_lines {
+        let title = app.nav_state.overlay_content.as_ref().map(|(t, _)| t.as_str()).unwrap_or(" Preview ");
+        help_overlay::render_styled_overlay(f, main_area[1], title, lines, app.nav_state.overlay_scroll);
     } else if let Some((title, content)) = &app.nav_state.overlay_content {
         help_overlay::render_custom_overlay(f, main_area[1], title, content, app.nav_state.overlay_scroll);
     } else if app.results.is_empty() && !app.is_searching {

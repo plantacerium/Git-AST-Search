@@ -29,10 +29,34 @@ pub struct EvolutionTimeline {
     pub history: Vec<EvolutionEntry>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EvolutionOptions {
+    pub lang: Option<String>,
+    pub branch: Option<String>,
+    pub range: Option<String>,
+    pub max_commits: Option<usize>,
+}
+
 pub struct EvolutionEngine;
 
 impl EvolutionEngine {
+    #[allow(dead_code)]
     pub fn trace(repo_path: &str, pattern: &str, lang_filter: Option<&str>) -> Result<EvolutionTimeline, String> {
+        Self::trace_with_options(
+            repo_path,
+            pattern,
+            EvolutionOptions {
+                lang: lang_filter.map(|s| s.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    pub fn trace_with_options(
+        repo_path: &str,
+        pattern: &str,
+        options: EvolutionOptions,
+    ) -> Result<EvolutionTimeline, String> {
         let repo = Repository::open(repo_path)
             .map_err(|e| format!("Failed to open repository: {}", e))?;
         let detector = LanguageDetector::new();
@@ -42,10 +66,31 @@ impl EvolutionEngine {
         // Chronological order: oldest commits first
         revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::REVERSE)
             .map_err(|e| format!("Sort error: {}", e))?;
-        revwalk.push_head()
-            .map_err(|e| format!("Push HEAD error: {}", e))?;
 
-        let oids: Vec<Oid> = revwalk.filter_map(|id| id.ok()).collect();
+        if let Some(ref rng) = options.range {
+            revwalk.push_range(rng)
+                .map_err(|e| format!("Invalid commit range '{}': {}", rng, e))?;
+        } else if let Some(ref br) = options.branch {
+            let branch_obj = repo
+                .find_branch(br, git2::BranchType::Local)
+                .or_else(|_| repo.find_branch(br, git2::BranchType::Remote))
+                .map_err(|e| format!("Branch '{}' not found: {}", br, e))?;
+            let target_oid = branch_obj.get().target()
+                .ok_or_else(|| format!("Branch '{}' has no valid target", br))?;
+            revwalk.push(target_oid)
+                .map_err(|e| format!("Failed to push branch target: {}", e))?;
+        } else {
+            revwalk.push_head()
+                .map_err(|e| format!("Push HEAD error: {}", e))?;
+        }
+
+        let mut oids: Vec<Oid> = revwalk.filter_map(|id| id.ok()).collect();
+        if let Some(limit) = options.max_commits {
+            if oids.len() > limit {
+                let start = oids.len() - limit;
+                oids = oids[start..].to_vec();
+            }
+        }
         let total_commits = oids.len();
 
         // Cache AST matches per blob Oid so unchanged files across commits are parsed only once
@@ -89,7 +134,7 @@ impl EvolutionEngine {
                         None => return git2::TreeWalkResult::Ok,
                     };
 
-                    if let Some(target_l) = lang_filter {
+                    if let Some(ref target_l) = options.lang {
                         if !lang.matches_filter(target_l) {
                             return git2::TreeWalkResult::Ok;
                         }
@@ -223,5 +268,31 @@ impl EvolutionEngine {
             total_occurrences,
             history,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evolution_options_default() {
+        let opts = EvolutionOptions::default();
+        assert!(opts.lang.is_none());
+        assert!(opts.branch.is_none());
+        assert!(opts.range.is_none());
+        assert!(opts.max_commits.is_none());
+    }
+
+    #[test]
+    fn test_evolution_trace_with_options_max_commits() {
+        let opts = EvolutionOptions {
+            max_commits: Some(3),
+            ..Default::default()
+        };
+        let res = EvolutionEngine::trace_with_options(".", "fn $F($$$)", opts);
+        assert!(res.is_ok());
+        let timeline = res.unwrap();
+        assert!(timeline.total_commits_analyzed <= 3);
     }
 }

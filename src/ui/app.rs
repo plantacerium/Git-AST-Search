@@ -12,6 +12,7 @@ use crate::engine::{GitEngine, Message};
 use crate::modules::{ChatEntry, Filter, SearchResult};
 use crate::navigation::modes::NavMode;
 use crate::navigation::{NavigationState, ActivePane};
+use crate::ui::CodeHighlighter;
 
 pub enum AiEvent {
     QuerySuccess { pattern: String, explanation: String },
@@ -36,6 +37,8 @@ pub struct App<'a> {
     pub is_ai_processing: bool,
     pub cancel_flag: Arc<AtomicBool>,
     pub scan_progress: Option<(usize, usize)>,
+    pub is_rule_editor: bool,
+    pub highlighter: CodeHighlighter,
 }
 
 impl<'a> App<'a> {
@@ -74,6 +77,8 @@ impl<'a> App<'a> {
             is_ai_processing: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             scan_progress: None,
+            is_rule_editor: false,
+            highlighter: CodeHighlighter::new(),
         }
     }
 
@@ -257,28 +262,93 @@ impl<'a> App<'a> {
         let res = &self.results[idx];
         match GitEngine::read_blob_at_commit(self.engine.get_repo_path(), &res.commit_id, &res.file_path) {
             Ok(content) => {
-                let mut formatted = String::new();
-                formatted.push_str(&format!(
-                    "Commit: {} ({}) | File: {}:{}\n\n",
-                    res.commit_short,
-                    res.author.as_deref().unwrap_or("unknown"),
-                    res.file_path,
-                    res.line_number
-                ));
-                for (i, line) in content.lines().enumerate() {
-                    let line_no = i + 1;
-                    if line_no == res.line_number {
-                        formatted.push_str(&format!(">> {:4} | {}\n", line_no, line));
-                    } else {
-                        formatted.push_str(&format!("   {:4} | {}\n", line_no, line));
-                    }
-                }
+                let styled_lines = self.highlighter.highlight_blob(&content, &res.file_path, res.line_number);
                 let title = format!(" 📄 Historical Blob [{}] {}:{} ", res.commit_short, res.file_path, res.line_number);
-                self.nav_state.show_overlay(title, formatted);
+                self.nav_state.show_styled_overlay(title, styled_lines);
                 self.nav_state.overlay_scroll = res.line_number.saturating_sub(6) as u16;
             }
             Err(e) => {
                 self.status_message = Some(format!("✗ Could not read historical blob: {}", e));
+            }
+        }
+    }
+
+    pub fn handle_paste(&mut self, text: String) {
+        if self.nav_state.mode == NavMode::Command {
+            self.nav_state.command_buffer.push_str(&text);
+        } else {
+            for ch in text.chars() {
+                if ch == '\n' {
+                    self.textarea.insert_newline();
+                } else if ch != '\r' {
+                    self.textarea.insert_char(ch);
+                }
+            }
+            if self.nav_state.mode == NavMode::Normal {
+                self.nav_state.set_mode(NavMode::Insert);
+            }
+            self.status_message = Some("📋 Pasted text into input".to_string());
+        }
+    }
+
+    pub fn paste_from_clipboard(&mut self) {
+        match arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
+            Ok(text) if !text.is_empty() => {
+                self.handle_paste(text);
+            }
+            Ok(_) => {
+                self.status_message = Some("ℹ Clipboard is empty".to_string());
+            }
+            Err(e) => {
+                self.status_message = Some(format!("✗ Could not read clipboard: {}", e));
+            }
+        }
+    }
+
+    pub fn copy_selected_to_clipboard(&mut self) {
+        if self.results.is_empty() {
+            self.status_message = Some("✗ No result selected to copy.".to_string());
+            return;
+        }
+        let idx = self.nav_state.global_selected().min(self.results.len() - 1);
+        let res = &self.results[idx];
+        let copy_text = format!(
+            "// [{}] {}:{}\n{}",
+            res.commit_short, res.file_path, res.line_number, res.matched_text
+        );
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(copy_text)) {
+            Ok(_) => {
+                self.status_message = Some(format!(
+                    "📋 Copied match to clipboard! ([{}] {}:{})",
+                    res.commit_short, res.file_path, res.line_number
+                ));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("✗ Failed to copy to clipboard: {}", e));
+            }
+        }
+    }
+
+    pub fn copy_context_to_clipboard(&mut self) {
+        if self.results.is_empty() {
+            self.status_message = Some("✗ No result selected to copy.".to_string());
+            return;
+        }
+        let idx = self.nav_state.global_selected().min(self.results.len() - 1);
+        let res = &self.results[idx];
+        let copy_text = format!(
+            "// [{}] {}:{}\n{}",
+            res.commit_short, res.file_path, res.line_number, res.content
+        );
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(copy_text)) {
+            Ok(_) => {
+                self.status_message = Some(format!(
+                    "📋 Copied context snippet to clipboard! ([{}] {}:{})",
+                    res.commit_short, res.file_path, res.line_number
+                ));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("✗ Failed to copy to clipboard: {}", e));
             }
         }
     }
@@ -329,6 +399,10 @@ impl<'a> App<'a> {
 
     pub fn handle_key(&mut self, key: event::KeyEvent) -> bool {
         if self.nav_state.mode == NavMode::Command {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && (key.code == KeyCode::Char('v') || key.code == KeyCode::Char('V')) {
+                self.paste_from_clipboard();
+                return self.should_quit;
+            }
             match key.code {
                 KeyCode::Enter => {
                     let input = self.nav_state.command_buffer.trim_start_matches('/').to_string();
@@ -435,9 +509,48 @@ impl<'a> App<'a> {
         }
 
         if self.nav_state.mode == NavMode::Insert {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && (key.code == KeyCode::Char('v') || key.code == KeyCode::Char('V')) {
+                self.paste_from_clipboard();
+                return false;
+            }
+            if key.modifiers.contains(KeyModifiers::CONTROL) && (key.code == KeyCode::Char('e') || key.code == KeyCode::Char('E')) {
+                self.is_rule_editor = !self.is_rule_editor;
+                self.status_message = Some(if self.is_rule_editor {
+                    "📜 Multi-line YAML Rule Editor active (Enter: newline | Ctrl+Enter: search | Ctrl+E: toggle)".to_string()
+                } else {
+                    "✎ Single-line Pattern Mode active (Enter: search | Shift+Enter: newline | Ctrl+E: Rule Editor)".to_string()
+                });
+                return false;
+            }
+            if key.modifiers.contains(KeyModifiers::CONTROL) && (key.code == KeyCode::Char('j') || key.code == KeyCode::Char('J')) {
+                self.textarea.insert_newline();
+                return false;
+            }
             match key.code {
                 KeyCode::Esc => { self.nav_state.set_mode(NavMode::Normal); }
-                KeyCode::Enter if !self.is_searching => self.start_search(None),
+                KeyCode::Enter => {
+                    if self.is_rule_editor {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+                            if !self.is_searching { self.start_search(None); }
+                        } else {
+                            self.textarea.insert_newline();
+                        }
+                    } else {
+                        if key.modifiers.contains(KeyModifiers::SHIFT) || key.modifiers.contains(KeyModifiers::ALT) {
+                            self.textarea.insert_newline();
+                        } else if !self.is_searching {
+                            self.start_search(None);
+                        }
+                    }
+                }
+                KeyCode::Char(c) => {
+                    // Accepts direct characters, Shift+symbols, and AltGr (Control + Alt on Windows)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+                        self.textarea.insert_char(c);
+                    } else {
+                        self.textarea.input(key);
+                    }
+                }
                 _ => { self.textarea.input(key); }
             }
             return false;
@@ -467,6 +580,26 @@ impl<'a> App<'a> {
             }
             KeyCode::Char('o') if self.nav_state.active_pane == ActivePane::Results => {
                 self.open_selected_in_editor();
+            }
+            KeyCode::Char('y') if self.nav_state.active_pane == ActivePane::Results => {
+                self.copy_selected_to_clipboard();
+            }
+            KeyCode::Char('Y') if self.nav_state.active_pane == ActivePane::Results => {
+                self.copy_context_to_clipboard();
+            }
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) && self.nav_state.active_pane == ActivePane::Results => {
+                self.copy_selected_to_clipboard();
+            }
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.paste_from_clipboard();
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.is_rule_editor = !self.is_rule_editor;
+                self.status_message = Some(if self.is_rule_editor {
+                    "📜 Multi-line YAML Rule Editor active (Enter: newline | Ctrl+Enter: search | Ctrl+E: toggle)".to_string()
+                } else {
+                    "✎ Single-line Pattern Mode active (Enter: search | Shift+Enter: newline | Ctrl+E: Rule Editor)".to_string()
+                });
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 self.nav_state.toggle_pane();
@@ -699,5 +832,73 @@ impl<'a> App<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_paste_multiline() {
+        let mut app = App::new(".".to_string());
+        app.handle_paste("rule:\n  pattern: $A.unwrap()\n  inside: fn $F()".to_string());
+        assert_eq!(app.textarea.lines().len(), 3);
+        assert_eq!(app.textarea.lines()[0], "rule:");
+        assert_eq!(app.textarea.lines()[1], "  pattern: $A.unwrap()");
+        assert_eq!(app.textarea.lines()[2], "  inside: fn $F()");
+    }
+
+    #[test]
+    fn test_altgr_symbol_input() {
+        let mut app = App::new(".".to_string());
+        app.nav_state.set_mode(NavMode::Insert);
+
+        // Simulate typing '{' with AltGr (Ctrl + Alt on Windows crossterm)
+        let key_open = event::KeyEvent {
+            code: KeyCode::Char('{'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+            kind: event::KeyEventKind::Press,
+            state: event::KeyEventState::NONE,
+        };
+        app.handle_key(key_open);
+
+        // Simulate typing '}' with AltGr
+        let key_close = event::KeyEvent {
+            code: KeyCode::Char('}'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+            kind: event::KeyEventKind::Press,
+            state: event::KeyEventState::NONE,
+        };
+        app.handle_key(key_close);
+
+        assert_eq!(app.textarea.lines()[0], "{}");
+    }
+
+    #[test]
+    fn test_toggle_rule_editor() {
+        let mut app = App::new(".".to_string());
+        app.nav_state.set_mode(NavMode::Insert);
+        assert!(!app.is_rule_editor);
+
+        // Press Ctrl+E
+        let key_toggle = event::KeyEvent {
+            code: KeyCode::Char('e'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: event::KeyEventKind::Press,
+            state: event::KeyEventState::NONE,
+        };
+        app.handle_key(key_toggle);
+        assert!(app.is_rule_editor);
+
+        // In rule editor, Enter should insert a newline
+        let key_enter = event::KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: event::KeyEventKind::Press,
+            state: event::KeyEventState::NONE,
+        };
+        app.handle_key(key_enter);
+        assert_eq!(app.textarea.lines().len(), 2);
     }
 }

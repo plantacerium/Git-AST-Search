@@ -283,8 +283,8 @@ impl CommandExecutor {
                     Err(e) => CommandResult::Error(format!("Refactor failed: {}", e)),
                 }
             }
-            Command::Evolution { pattern } => {
-                match crate::engine::EvolutionEngine::trace(&self.repo_path, &pattern, None) {
+            Command::Evolution { pattern, options } => {
+                match crate::engine::EvolutionEngine::trace_with_options(&self.repo_path, &pattern, options) {
                     Ok(timeline) => {
                         let mut msg = format!("🏺 Semantic AST Blame for '{}' ({} events across {} commits):\n\n", pattern, timeline.total_occurrences, timeline.total_commits_analyzed);
                         for (idx, h) in timeline.history.iter().enumerate() {

@@ -1,13 +1,14 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Calculates the main layout regions for the application (Sidebar, Main Area, Status, Input)
-pub fn calculate_main_layout(area: Rect) -> std::rc::Rc<[Rect]> {
+pub fn calculate_main_layout(area: Rect, is_rule_editor: bool) -> std::rc::Rc<[Rect]> {
+    let input_height = if is_rule_editor { 12 } else { 7 };
     Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),      // Main Application Area
-            Constraint::Length(1),   // Status Bar
-            Constraint::Length(7),   // Input Area
+            Constraint::Min(0),              // Main Application Area
+            Constraint::Length(1),           // Status Bar
+            Constraint::Length(input_height), // Input Area
         ])
         .split(area)
 }

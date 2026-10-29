@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![MCP](https://img.shields.io/badge/MCP-stdio%20JSON--RPC-purple)
 ![SARIF](https://img.shields.io/badge/export-SARIF%202.1.0-green)
-![Languages](https://img.shields.io/badge/languages-8-informational)
+![Languages](https://img.shields.io/badge/languages-26-informational)
 
 🇪🇸 [Versión en español](./README.md)
 
@@ -191,12 +191,16 @@ rule:
 
 ### Controls
 
-**Insert mode** (typing the pattern)
+**Insert mode** (typing the pattern or rule)
 
 | Key | Action |
 |---|---|
-| *any* | Type the AST pattern |
-| `Enter` | Start the search |
+| *any* | Type the AST pattern or symbols (`{ } [ ] ~ @ # \| \` with full `AltGr` support) |
+| `Enter` | Start the search (in pattern mode) or newline (in Rule Editor mode) |
+| `Shift+Enter` / `Alt+Enter` | Insert a newline to write composite rules |
+| `Ctrl+E` | 📜 Toggle **Multi-line YAML Rule Editor** (expands input box for `inside/not` rules) |
+| `Ctrl+Enter` | Run multi-line search in Rule Editor |
+| `Ctrl+V` | 📋 Paste text or rule from system clipboard |
 | `Esc` | Back to Normal mode |
 
 **Normal mode** (navigating)
@@ -206,14 +210,18 @@ rule:
 | `j` / `↓` · `k` / `↑` | Next / previous result (or query, in History) |
 | `h` / `←` · `l` / `→` | Previous / next page · jump between History and Results |
 | `gg` · `G` | First / last result |
-| `d` / `Space` | 📄 **Historical blob preview** at the match's commit |
+| `d` / `Space` | 📄 **Historical blob preview** with **syntax highlighting (`syntect`)** and match line |
 | `o` | ↗ **Open in editor** at the exact line |
+| `y` / `Ctrl+C` | 📋 **Copy match to clipboard** (`commit_short file:line\ncode`) |
+| `Y` | 📋 **Copy full context snippet to clipboard** (surrounding code) |
+| `Ctrl+V` | 📋 Paste clipboard text into pattern input |
+| `Ctrl+E` | 📜 Toggle **Multi-line YAML Rule Editor** (expands input box) |
 | `Tab` | Toggle focus Results ⇆ History |
-| `Enter` / `r` | (History) Re-run the selected query |
+| `Enter` / `r` | (History) Re-run the selected query · (Results) Start search |
 | `e` / `i` | (History) Load the query into the editor |
 | `i` / `a` | Enter Insert mode |
 | `v` | Visual mode (`b` bookmarks the result) |
-| `/` or `:` | Command mode (`Tab` completes, `↑/↓` command history) |
+| `/` or `:` | Command mode (`Tab` completes, `↑/↓` command history, `Ctrl+V` pastes) |
 | `Ctrl+B` | Show / hide the sidebar |
 | `?` | Help |
 | `Esc` | **Cancel the running search** · close modal · back to Results · quit |
@@ -233,7 +241,7 @@ rule:
 | 💾 Memory | `/bookmark [label] [--note …]` · `/bookmarks` · `/unbookmark <id>` | Persistent bookmarks |
 | | `/save [name]` · `/load <name>` · `/sessions` | Investigation sessions |
 | 📤 Export | `/export json\|csv\|sarif [path]` (`/e`) | Defaults to `results.<format>` |
-| 🏺 History | `/evolution <pattern>` (`/blame`) | Timeline with a `-`/`+` diff on every `[MUTATED]` |
+| 🏺 History | `/evolution <pattern> [options]` (`/blame`) | Timeline with a `-`/`+` diff (`--branch`, `--range`, `--max-commits`) |
 | 🛠 Refactor | `/refactor <P> -> <R> [--apply]` (`/rewrite`) | Rewrite preview; `--apply` writes to disk |
 | 🦙 AI | `/ai <question>` · `/report [topic]` | Natural language → pattern · `audit_report.md` report |
 | ⚙️ System | `/help [cmd]` · `/clear` · `/toggle` · `/quit` | |
@@ -284,8 +292,8 @@ Works with Claude Desktop / Claude Code, Cursor, Windsurf, Antigravity and any s
 
 | Tool | Parameters | Returns | Side effects |
 |---|---|---|---|
-| `git_ast_search` | `pattern`* · `repo_path` · `lang` · `author` · `path` · `after` | `SearchResult[]` | None (read-only) |
-| `git_ast_evolution` | `pattern`* · `repo_path` · `lang` | `EvolutionTimeline` | None (read-only) |
+| `git_ast_search` | `pattern`* · `repo_path` · `lang` · `branch` · `range` · `all` · `max_results` · `max_commits` · `author` · `path` · `after` · `before` | `SearchResult[]` | None (read-only) |
+| `git_ast_evolution` | `pattern`* · `repo_path` · `lang` · `branch` · `range` · `max_commits` | `EvolutionTimeline` | None (read-only) |
 | `git_ast_refactor` | `pattern`* · `rewrite`* · `dry_run` (default `true`) · `repo_path` · `lang` | `RefactorResult` | **Writes to disk only when `dry_run: false`** |
 | `list_ast_patterns` | `lang` | Catalogue `{language, patterns[]}` | None |
 | `ai_query_ast` | `prompt`* | `{pattern, lang, explanation}` | Calls local Ollama |
@@ -473,6 +481,18 @@ flowchart LR
 
 | Language | Goal | Pattern |
 |---|---|---|
+| 🤖 Android (Kotlin) | Unsafe non-null assertion | `$X!!` |
+| | Unscoped coroutine leak | `GlobalScope.launch { $$$ }` |
+| | Residual debug log | `Log.$M($TAG, $MSG)` |
+| 🎯 Flutter (Dart) | State re-render update | `setState(() { $$$ })` |
+| | Debug prints | `debugPrint($$$)` |
+| 🍏 iOS (Swift) | Unsafe force try | `try! $F($$$)` |
+| | Force unwrap optional | `$X!` |
+| 🔷 C# (.NET) | Unsafe block | `unsafe { $$$ }` |
+| | Blocking thread sleep | `Thread.Sleep($$$)` |
+| ⚡ Solidity (Web3) | tx.origin phishing risk | `tx.origin` |
+| | Contract self-destruction | `selfdestruct($$$)` |
+| 🐚 Bash / Shell | Insecure eval execution | `eval $$$` |
 | 🦀 Rust | `unsafe` blocks | `unsafe { $$$ }` |
 | | Risky unwrapping | `$OBJ.unwrap()` · `$OBJ.expect($MSG)` |
 | | Silenced errors | `let _ = $FUNC($$$);` |
@@ -488,7 +508,14 @@ flowchart LR
 | ⚙️ C / C++ | Unsafe string functions | `strcpy($DEST, $SRC)` · `sprintf($$$)` |
 | | Manual memory | `free($PTR);` · `delete $PTR;` |
 
-**Supported languages:** Rust (`.rs`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Python (`.py`), Go (`.go`), Java (`.java`), C (`.c`, `.h`), C++ (`.cpp`, `.cc`, `.cxx`).
+### 🌐 26 Supported Languages with Native Tree-Sitter
+
+1. **Android & Mobile:** Kotlin (`.kt`, `.kts`, aliases: `android`, `kt`), Java (`.java`), Dart / Flutter (`.dart`, alias: `flutter`), Swift (`.swift`, alias: `ios`).
+2. **Systems & Backend:** Rust (`.rs`), Go (`.go`), C (`.c`, `.h`), C++ (`.cpp`, `.cc`, `.cxx`), C# (`.cs`, aliases: `c#`, `dotnet`), Scala (`.scala`, `.sc`).
+3. **Web & Scripting:** TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`), Python (`.py`), Ruby (`.rb`), PHP (`.php`), Lua (`.lua`), Bash/Shell (`.sh`, `.bash`, `.zsh`).
+4. **Smart Contracts, Cloud & IaC:** Solidity (`.sol`, aliases: `web3`, `solidity`), HCL / Terraform (`.tf`, `.hcl`, alias: `terraform`), Nix (`.nix`).
+5. **Data Formats & Styles:** HTML (`.html`, `.htm`), CSS/SCSS (`.css`, `.scss`), JSON (`.json`), YAML (`.yaml`, `.yml`).
+6. **Functional Programming:** Elixir (`.ex`, `.exs`), Haskell (`.hs`).
 
 ---
 
@@ -506,7 +533,7 @@ Git-AST-Search/
 │   ├── ai/                     # Ollama client and system prompts
 │   ├── commands/               # Slash commands: parser, executor, registry, autocomplete, export
 │   ├── navigation/             # Navigation state and Vim modes (Normal/Insert/Visual/Command)
-│   ├── languages/              # Extension detection, aliases and pattern catalogue
+│   ├── languages/              # Extension detection, aliases and pattern catalogue (26 languages)
 │   ├── modules/                # Models: SearchResult, ChatEntry, Session, Bookmark, Filter, Config
 │   └── ui/                     # ratatui: app, layout, render and components
 ├── docs/                       # Detailed technical documentation
@@ -547,11 +574,7 @@ More detail: [docs/architecture.md](./docs/architecture.md) · [docs/ai_agents.m
 
 | Area | Current state | Direction |
 |---|---|---|
-| `/evolution` scope | Walks `HEAD` and filters by language | Support `--branch` / `--range` |
-| MCP tools | `git_ast_search` doesn't expose `branch`, `range`, `max_results` yet | Match the CLI options |
-| TUI input | Single line; multi-line YAML rules go through CLI / MCP | Multi-line rule editor |
-| Blob preview | Line numbers with the match highlighted | Syntax highlighting (`syntect`) |
-| Languages | 8 Tree-Sitter languages; Ruby, PHP, Swift and Kotlin are detected but not analysed yet | Wire them into the engine and add more `ast-grep-language` grammars |
+| Languages | **26 languages** with native Tree-Sitter AST analysis (including Android Kotlin, Dart, Swift, Solidity, C#) | Dynamic external Tree-Sitter grammar loading via plugins |
 
 ---
 

@@ -15,7 +15,7 @@ use std::sync::{
 pub mod evolution;
 pub mod refactor;
 
-pub use evolution::EvolutionEngine;
+pub use evolution::{EvolutionEngine, EvolutionOptions};
 pub use refactor::RefactorEngine;
 
 /// Maximum blob size to parse with Tree-Sitter (2 MB)
@@ -145,11 +145,28 @@ impl GitEngine {
             Language::JavaScript => Some(SupportLang::JavaScript),
             Language::TypeScript => Some(SupportLang::TypeScript),
             Language::Go => Some(SupportLang::Go),
-            Language::C => Some(SupportLang::C),
-            Language::Cpp => Some(SupportLang::Cpp),
             Language::Python => Some(SupportLang::Python),
             Language::Java => Some(SupportLang::Java),
-            _ => None,
+            Language::C => Some(SupportLang::C),
+            Language::Cpp => Some(SupportLang::Cpp),
+            Language::Ruby => Some(SupportLang::Ruby),
+            Language::Php => Some(SupportLang::Php),
+            Language::Swift => Some(SupportLang::Swift),
+            Language::Kotlin => Some(SupportLang::Kotlin),
+            Language::CSharp => Some(SupportLang::CSharp),
+            Language::Dart => Some(SupportLang::Dart),
+            Language::Bash => Some(SupportLang::Bash),
+            Language::Html => Some(SupportLang::Html),
+            Language::Css => Some(SupportLang::Css),
+            Language::Json => Some(SupportLang::Json),
+            Language::Yaml => Some(SupportLang::Yaml),
+            Language::Elixir => Some(SupportLang::Elixir),
+            Language::Lua => Some(SupportLang::Lua),
+            Language::Scala => Some(SupportLang::Scala),
+            Language::Solidity => Some(SupportLang::Solidity),
+            Language::Hcl => Some(SupportLang::Hcl),
+            Language::Nix => Some(SupportLang::Nix),
+            Language::Haskell => Some(SupportLang::Haskell),
         }
     }
 
@@ -668,5 +685,18 @@ rule:
         assert_eq!(q.primary_pattern, "$A.unwrap()");
         assert_eq!(q.inside_pattern.as_deref(), Some("fn $FUNC($$$) { $$$ }"));
         assert_eq!(q.not_pattern.as_deref(), Some("test_unwrap()"));
+    }
+
+    #[test]
+    fn test_all_26_languages_mapped_to_support_lang() {
+        let registry = crate::languages::LanguageRegistry::new();
+        for &lang in registry.enabled_languages() {
+            let support = GitEngine::to_support_lang(lang);
+            assert!(
+                support.is_some(),
+                "Language {:?} must have a valid Tree-Sitter SupportLang mapping",
+                lang
+            );
+        }
     }
 }

@@ -22,6 +22,7 @@ pub struct NavigationState {
     pub history_selected_idx: usize,
     pub pending_g: bool,
     pub overlay_content: Option<(String, String)>,
+    pub overlay_lines: Option<Vec<ratatui::text::Line<'static>>>,
     pub overlay_scroll: u16,
 }
 
@@ -39,6 +40,7 @@ impl NavigationState {
             history_selected_idx: 0,
             pending_g: false,
             overlay_content: None,
+            overlay_lines: None,
             overlay_scroll: 0,
         }
     }
@@ -136,11 +138,19 @@ impl NavigationState {
 
     pub fn show_overlay(&mut self, title: impl Into<String>, body: impl Into<String>) {
         self.overlay_content = Some((title.into(), body.into()));
+        self.overlay_lines = None;
+        self.overlay_scroll = 0;
+    }
+
+    pub fn show_styled_overlay(&mut self, title: impl Into<String>, lines: Vec<ratatui::text::Line<'static>>) {
+        self.overlay_content = Some((title.into(), String::new()));
+        self.overlay_lines = Some(lines);
         self.overlay_scroll = 0;
     }
 
     pub fn close_overlay(&mut self) {
         self.overlay_content = None;
+        self.overlay_lines = None;
         self.overlay_scroll = 0;
     }
 

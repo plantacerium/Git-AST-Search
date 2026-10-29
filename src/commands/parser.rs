@@ -1,3 +1,4 @@
+use crate::engine::EvolutionOptions;
 use crate::modules::Filter;
 
 #[derive(Debug, Clone)]
@@ -26,7 +27,7 @@ pub enum Command {
     AiQuery { prompt: String },
     AiReport { topic: Option<String> },
     Refactor { pattern: String, rewrite: String, apply: bool },
-    Evolution { pattern: String },
+    Evolution { pattern: String, options: EvolutionOptions },
     History,
     Replay { index: Option<usize> },
     Nop,
@@ -174,11 +175,48 @@ impl CommandParser {
                 }
             }
             "evolution" | "blame" => {
-                let pattern = parts[1..].join(" ");
-                if pattern.is_empty() {
-                    return Err("Usage: /evolution <PATTERN> (e.g. /evolution std::thread::spawn($$$))".to_string());
+                let mut pattern_tokens = Vec::new();
+                let mut options = EvolutionOptions::default();
+                let mut i = 1;
+                while i < parts.len() {
+                    match parts[i] {
+                        "--branch" if i + 1 < parts.len() => {
+                            options.branch = Some(parts[i + 1].to_string());
+                            i += 2;
+                        }
+                        "--range" if i + 1 < parts.len() => {
+                            options.range = Some(parts[i + 1].to_string());
+                            i += 2;
+                        }
+                        "--lang" if i + 1 < parts.len() => {
+                            options.lang = Some(parts[i + 1].to_string());
+                            i += 2;
+                        }
+                        "--max-commits" if i + 1 < parts.len() => {
+                            options.max_commits = parts[i + 1].parse().ok();
+                            i += 2;
+                        }
+                        token => {
+                            if let Some(f) = Filter::parse(token) {
+                                match f.field.as_str() {
+                                    "branch" => options.branch = Some(f.value),
+                                    "range" => options.range = Some(f.value),
+                                    "lang" => options.lang = Some(f.value),
+                                    "max_commits" => options.max_commits = f.value.parse().ok(),
+                                    _ => pattern_tokens.push(token),
+                                }
+                            } else {
+                                pattern_tokens.push(token);
+                            }
+                            i += 1;
+                        }
+                    }
                 }
-                Command::Evolution { pattern }
+                let pattern = pattern_tokens.join(" ");
+                if pattern.is_empty() {
+                    return Err("Usage: /evolution <PATTERN> [--branch <name>] [--range <A..B>] [--lang <lang>] [--max-commits <N>]".to_string());
+                }
+                Command::Evolution { pattern, options }
             }
             "hist" | "history" => Command::History,
             "replay" | "rerun" => {
@@ -214,6 +252,31 @@ mod tests {
         match p_rerun.command {
             Command::Replay { index } => assert_eq!(index, None),
             _ => panic!("Expected Replay command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_evolution_with_scope_options() {
+        let p_evo = CommandParser::parse("/evolution $A.unwrap() --branch main --range HEAD~10..HEAD --lang rs --max-commits 5").unwrap();
+        match p_evo.command {
+            Command::Evolution { pattern, options } => {
+                assert_eq!(pattern, "$A.unwrap()");
+                assert_eq!(options.branch.as_deref(), Some("main"));
+                assert_eq!(options.range.as_deref(), Some("HEAD~10..HEAD"));
+                assert_eq!(options.lang.as_deref(), Some("rs"));
+                assert_eq!(options.max_commits, Some(5));
+            }
+            _ => panic!("Expected Evolution command"),
+        }
+
+        let p_filter_style = CommandParser::parse("/blame foo($$$) branch:feat/audit range:v1.0..v2.0").unwrap();
+        match p_filter_style.command {
+            Command::Evolution { pattern, options } => {
+                assert_eq!(pattern, "foo($$$)");
+                assert_eq!(options.branch.as_deref(), Some("feat/audit"));
+                assert_eq!(options.range.as_deref(), Some("v1.0..v2.0"));
+            }
+            _ => panic!("Expected Evolution command"),
         }
     }
 }
