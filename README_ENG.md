@@ -381,19 +381,19 @@ sequenceDiagram
     participant A as 🤖 Agent (IDE)
     participant M as git-ast-search mcp
     participant G as Git history
-    H->>A: "Where do we mishandle errors in the engine?"
-    A->>M: git_ast_search { pattern: "$A.unwrap()", lang: "rust" }
+    H->>A: Where do we mishandle errors in the engine?
+    A->>M: git_ast_search(pattern: "$A.unwrap()", lang: "rust")
     M->>G: revwalk + blob dedup + AST
     G-->>M: matches
     M-->>A: SearchResult[]
-    A-->>H: "42 findings; top 3: 7f8dde0 src/engine/mod.rs:540…"
-    H->>H: /search $A.unwrap() lang:rust → j/k, d (blob), o (editor)
-    H->>A: "Propose a refactor for src/engine"
-    A->>M: git_ast_refactor { dry_run: true }
+    A-->>H: 42 findings - Top 3: 7f8dde0 src/engine/mod.rs:540
+    H->>H: /search $A.unwrap() lang:rust (j/k, d blob, o editor)
+    H->>A: Propose a refactor for src/engine
+    A->>M: git_ast_refactor(dry_run: true)
     M-->>A: diffs
     A-->>H: diff preview
-    H->>A: "Approved"
-    A->>M: git_ast_refactor { dry_run: false }
+    H->>A: Approved
+    A->>M: git_ast_refactor(dry_run: false)
 ```
 
 ### Playbooks
