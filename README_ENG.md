@@ -180,9 +180,9 @@ rule:
 
 ```
 ┌─ 📜 History ──────┐┌─ Results (page 1/4) ─────────────────────────────────┐
-│ ▸ $A.unwrap()  42 ││ [7f8dde0] src/ui/app.rs:102  (Rust)  pulsarforge     │
+│ ▸ $A.unwrap()  42 ││ [7f8dde0] src/ui/app.rs:102  (Rust)  plantacerium     │
 │   unsafe{$$$}   3 ││   let parsed = CommandParser::parse(&input)          │
-│   console.log…  0 ││ [4f19c20] src/main.rs:164   (Rust)  pulsarforge      │
+│   console.log…  0 ││ [4f19c20] src/main.rs:164   (Rust)  plantacerium      │
 └───────────────────┘└───────────────────────────────────────────────────────┘
 ┌─ AST Pattern (Enter to search) ──────────────────────────────────────────────┐
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -314,7 +314,7 @@ Works with Claude Desktop / Claude Code, Cursor, Windsurf, Antigravity and any s
   "lang": "Rust",
   "matched_text": "CommandParser::parse(&input)",
   "content": "…±2 lines of context…",
-  "author": "pulsarforge",
+  "author": "plantacerium",
   "timestamp": "2026-04-08T08:56:39Z"
 }
 
